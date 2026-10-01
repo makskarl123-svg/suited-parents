@@ -38,7 +38,7 @@ function CapabilityCard({ c, busy, onAct }: { c: CapabilityView; busy: boolean; 
           <div className="missing">{c.progress.done} of {c.progress.total}{c.progress.missing[0] ? ` · ${c.progress.missing[0]}` : ""}</div>
         </>
       ) : null}
-      {isCeiling && c.progress ? <div className="missing">{c.progress.done} of {c.progress.total} strands this year{c.progress.missing[0] ? ` · ${c.progress.missing[0]}` : ""}</div> : null}
+      {isCeiling && c.progress ? <div className="missing">{c.progress.done} of {c.progress.total} strands complete this year</div> : null}
       {!isCeiling ? (
         <div className="actions">
           {showLimit ? <input className="limit" inputMode="numeric" placeholder="AED / week" value={limit} onChange={(e) => setLimit(e.target.value)} aria-label="Weekly limit in AED" /> : null}
