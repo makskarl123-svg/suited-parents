@@ -23,6 +23,7 @@ export interface Snapshot { capability: string; state: CapabilityState; label: s
 export interface AuditEntry { at: string; childId: string; capability?: string; what: string; requestId?: string; actor?: string }
 
 export type Verb = "approve" | "not-yet" | "open-early" | "close" | "reopen";
+export interface ChildSummary { childId: string; displayName: string; gateSet: string }
 
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
@@ -42,6 +43,10 @@ export class MoneyApi {
       throw new ApiError(res.status, msg);
     }
     return (await res.json()) as T;
+  }
+
+  myChildren(): Promise<{ guardianId: string; children: ChildSummary[] }> {
+    return this.call("/me/children");
   }
 
   capabilities(childId: string): Promise<CapabilitiesView> {

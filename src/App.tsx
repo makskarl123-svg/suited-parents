@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { MoneyApi } from "./api";
+import { useEffect, useMemo, useState } from "react";
+import { MoneyApi, type ChildSummary } from "./api";
 import { AuthProvider, useIdentity } from "./auth";
 import { ChildPage } from "./pages/Child";
 
@@ -7,16 +7,62 @@ import { ChildPage } from "./pages/Child";
 // the app is told where the service lives.
 const API_BASE: string = (import.meta.env["VITE_MONEY_API_URL"] as string | undefined) ?? "/api";
 
-// The family link (which children this guardian has) comes from the learning
-// API's family model, not yet built. Until then the sandbox child is fixed.
-const SANDBOX_CHILD = { id: "maya", name: "Maya" };
-
 function Inner() {
-  const { identity, signOut, mode } = useIdentity();
+  const { identity, signOut, mode, guardianLabel } = useIdentity();
   const api = useMemo(() => new MoneyApi(API_BASE, identity), [identity]);
+  const [children, setChildren] = useState<ChildSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    api.myChildren().then((r) => {
+      if (!live) return;
+      setChildren(r.children);
+      if (r.children.length === 1 && r.children[0]) setPicked(r.children[0].childId);
+    }).catch((e: unknown) => { if (live) setError(e instanceof Error ? e.message : "Something went wrong"); });
+    return () => { live = false; };
+  }, [api]);
+
+  const current = children?.find((c) => c.childId === picked) ?? null;
+
   return (
     <>
-      <ChildPage api={api} childId={SANDBOX_CHILD.id} childName={SANDBOX_CHILD.name} />
+      {error ? <div className="shell"><div className="err">{error}</div></div> : null}
+      {!error && children === null ? <div className="shell"><div className="card"><div className="meta">Loading…</div></div></div> : null}
+      {!error && children !== null && children.length === 0 ? (
+        <div className="shell">
+          <div className="top"><span className="wm"><img src="/suited-logo.svg" alt="Suited" /><b>Money</b></span></div>
+          <div className="eyebrow">Signed in as {guardianLabel}</div>
+          <h1>No children <em>linked yet.</em></h1>
+          <p className="sub">When your child's school enrols them in Suited Money and you give consent, they appear here. Nothing to do for now.</p>
+        </div>
+      ) : null}
+      {!error && children !== null && children.length > 1 && !current ? (
+        <div className="shell">
+          <div className="top"><span className="wm"><img src="/suited-logo.svg" alt="Suited" /><b>Money</b></span></div>
+          <div className="eyebrow">Your children</div>
+          <h1>Who are we <em>looking at?</em></h1>
+          <div className="pick">
+            {children.map((c) => (
+              <button key={c.childId} className="card" onClick={() => { setPicked(c.childId); }}>
+                <div className="title">{c.displayName}</div>
+                <div className="meta">{c.gateSet}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {current ? (
+        <>
+          <ChildPage api={api} childId={current.childId} childName={current.displayName} />
+          {children && children.length > 1 ? (
+            <div className="actions" style={{ justifyContent: "center" }}>
+              <button className="btn ghost" onClick={() => { setPicked(null); }}>Another child</button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
       {mode === "dev" && signOut ? (
         <div className="actions" style={{ justifyContent: "center", paddingBottom: 24 }}>
           <button className="btn ghost" onClick={signOut}>Switch guardian</button>
