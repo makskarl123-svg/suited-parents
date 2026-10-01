@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { MoneyApi, type ChildSummary } from "./api";
+import { ApiError, MoneyApi, type ChildSummary } from "./api";
 import { AuthProvider, useIdentity } from "./auth";
 import { ChildPage } from "./pages/Child";
 
@@ -20,7 +20,11 @@ function Inner() {
       if (!live) return;
       setChildren(r.children);
       if (r.children.length === 1 && r.children[0]) setPicked(r.children[0].childId);
-    }).catch((e: unknown) => { if (live) setError(e instanceof Error ? e.message : "Something went wrong"); });
+    }).catch((e: unknown) => {
+      if (!live) return;
+      if (e instanceof ApiError && e.status === 404) setError("The Money service you are connected to is older than this app. Restart it (npm run sandbox) and reload.");
+      else setError(e instanceof Error ? e.message : "Something went wrong");
+    });
     return () => { live = false; };
   }, [api]);
 
@@ -46,7 +50,7 @@ function Inner() {
           <div className="pick">
             {children.map((c) => (
               <button key={c.childId} className="card" onClick={() => { setPicked(c.childId); }}>
-                <div className="title">{c.displayName}</div>
+                <div className="title">{c.displayName || "Your child"}</div>
                 <div className="meta">{c.gateSet}</div>
               </button>
             ))}
@@ -55,7 +59,7 @@ function Inner() {
       ) : null}
       {current ? (
         <>
-          <ChildPage api={api} childId={current.childId} childName={current.displayName} />
+          <ChildPage api={api} childId={current.childId} childName={current.displayName || "Your child"} />
           {children && children.length > 1 ? (
             <div className="actions" style={{ justifyContent: "center" }}>
               <button className="btn ghost" onClick={() => { setPicked(null); }}>Another child</button>

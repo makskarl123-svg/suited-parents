@@ -31,7 +31,7 @@ function CapabilityCard({ c, busy, onAct }: { c: CapabilityView; busy: boolean; 
         </div>
         <span className={`tag ${t.cls}`}>{t.text}</span>
       </div>
-      <div className="meta" style={{ marginTop: 8 }}>{c.label}{c.lastActor ? ` · last changed by ${c.lastActor}` : ""}</div>
+      <div className="meta" style={{ marginTop: 8 }}>{c.label}{c.lastActor ? ` · by ${c.lastActor}` : ""}</div>
       {c.progress && c.state === "Locked" && !isCeiling ? (
         <>
           <div className="bar"><i style={{ width: `${pct}%` }} /></div>
