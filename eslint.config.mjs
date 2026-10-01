@@ -21,6 +21,7 @@ export default defineConfig(
       "@typescript-eslint/no-confusing-void-expression": ["error", { ignoreArrowShorthand: true }],
     },
   },
+  { files: ["**/*.mjs"], extends: [tseslint.configs.disableTypeChecked] },
   {
     files: ["**/*.test.ts"],
     rules: { "@typescript-eslint/no-non-null-assertion": "off", "@typescript-eslint/no-unnecessary-type-assertion": "off" },
