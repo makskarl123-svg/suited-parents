@@ -12,7 +12,7 @@ const TAG: Record<CapabilityView["state"], { cls: string; text: string }> = {
   Closed: { cls: "off", text: "Off" },
 };
 
-function CapabilityCard({ c, busy, onAct }: { c: CapabilityView; busy: boolean; onAct: (verb: Verb, limit?: number) => void }): JSX.Element {
+function CapabilityCard({ c, busy, onAct }: { c: CapabilityView; busy: boolean; onAct: (verb: Verb, limit?: number) => void }) {
   const [limit, setLimit] = useState<string>(c.limit ? String(c.limit.perWeek) : "");
   const pct = c.progress && c.progress.total > 0 ? Math.round((c.progress.done / c.progress.total) * 100) : 0;
   const tone = c.state === "Requested" ? "y" : c.state === "Active" || c.state === "ActiveByParent" ? "g" : c.state === "Held" || c.state === "PendingBank" ? "b" : "";
@@ -65,7 +65,7 @@ function titleFor(id: string): string {
   }
 }
 
-export function ChildPage({ api, childId, childName }: { api: MoneyApi; childId: string; childName: string }): JSX.Element {
+export function ChildPage({ api, childId, childName }: { api: MoneyApi; childId: string; childName: string }) {
   const [view, setView] = useState<CapabilitiesView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);

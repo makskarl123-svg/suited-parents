@@ -28,11 +28,11 @@ export function useIdentity(): AuthValue {
 
 export const CLERK_KEY: string | undefined = import.meta.env["VITE_CLERK_PUBLISHABLE_KEY"] as string | undefined;
 
-export function AuthProvider({ children }: { children: ReactNode }): JSX.Element {
+export function AuthProvider({ children }: { children: ReactNode }) {
   return CLERK_KEY ? <ClerkAuth publishableKey={CLERK_KEY}>{children}</ClerkAuth> : <DevAuth>{children}</DevAuth>;
 }
 
-function ClerkAuth({ publishableKey, children }: { publishableKey: string; children: ReactNode }): JSX.Element {
+function ClerkAuth({ publishableKey, children }: { publishableKey: string; children: ReactNode }) {
   return (
     <ClerkProvider publishableKey={publishableKey} afterSignOutUrl="/">
       <SignedOut>
@@ -47,7 +47,7 @@ function ClerkAuth({ publishableKey, children }: { publishableKey: string; child
   );
 }
 
-function ClerkBridge({ children }: { children: ReactNode }): JSX.Element {
+function ClerkBridge({ children }: { children: ReactNode }) {
   const { getToken, userId, signOut } = useAuth();
   const value = useMemo<AuthValue>(() => ({
     mode: "clerk",
@@ -60,7 +60,7 @@ function ClerkBridge({ children }: { children: ReactNode }): JSX.Element {
 
 const DEV_GUARDIANS = ["mum", "dad"];
 
-function DevAuth({ children }: { children: ReactNode }): JSX.Element {
+function DevAuth({ children }: { children: ReactNode }) {
   const [who, setWho] = useState<string | null>(() => { try { return localStorage.getItem("suited.dev.guardian"); } catch { return null; } });
   const value = useMemo<AuthValue | null>(() => who ? ({
     mode: "dev",

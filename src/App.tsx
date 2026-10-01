@@ -11,7 +11,7 @@ const API_BASE: string = (import.meta.env["VITE_MONEY_API_URL"] as string | unde
 // API's family model, not yet built. Until then the sandbox child is fixed.
 const SANDBOX_CHILD = { id: "maya", name: "Maya" };
 
-function Inner(): JSX.Element {
+function Inner() {
   const { identity, signOut, mode } = useIdentity();
   const api = useMemo(() => new MoneyApi(API_BASE, identity), [identity]);
   return (
@@ -26,7 +26,7 @@ function Inner(): JSX.Element {
   );
 }
 
-export default function App(): JSX.Element {
+export default function App() {
   return (
     <AuthProvider>
       <Inner />
