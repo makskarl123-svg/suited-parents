@@ -113,3 +113,27 @@ input.limit { font: inherit; font-weight: 700; width: 120px; min-height: 44px; b
 .stat .label { letter-spacing: 0.02em; text-transform: none; font-size: 12px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
 .stat .v { font-family: "DIN Round", sans-serif; font-weight: 700; font-size: 20px; color: var(--ink); margin-top: 8px; letter-spacing: -0.02em; white-space: nowrap; }
 @media (min-width: 768px) { .stat { padding: 18px; } .stat .v { font-size: 26px; } }
+
+/* ─── Frame: sidebar on wide screens, plain stack on phones ────────── */
+.frame { display: flex; min-height: 100vh; }
+.side { display: none; }
+@media (min-width: 1024px) {
+  .side { display: flex; flex-direction: column; width: 232px; flex: none; padding: 24px 16px; border-right: 1.5px solid var(--swan); background: #fff; position: sticky; top: 0; height: 100vh; }
+  .shell { padding-top: 28px; }
+}
+.side .wm { padding: 0 8px 18px; }
+.nav { display: flex; flex-direction: column; gap: 4px; }
+.nav a, .nav button.navitem { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; font-weight: 700; font-size: 14.5px; color: var(--eel); text-decoration: none; text-align: left; width: 100%; }
+.nav .navitem.on { background: var(--owl); color: #fff; }
+.nav .ic { width: 32px; height: 32px; border-radius: 10px; background: var(--polar); display: flex; align-items: center; justify-content: center; flex: none; }
+.nav .navitem.on .ic { background: rgba(255, 255, 255, 0.22); }
+.nav .ic img { width: 18px; height: 18px; object-fit: contain; }
+.side .kids { margin-top: 22px; }
+.side .kids .label { padding: 0 12px 8px; color: var(--hare); }
+.side .kid { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 14px; font-weight: 700; font-size: 14px; color: var(--eel); width: 100%; text-align: left; }
+.side .kid.on { background: var(--mint); color: var(--mintt); }
+.side .kid .dot { width: 30px; height: 30px; border-radius: 50%; background: var(--lilac); color: var(--lilact); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; flex: none; }
+.side .foot-side { margin-top: auto; padding: 14px 12px 0; border-top: 1.5px solid var(--polar); font-size: 12.5px; color: var(--hare); display: flex; flex-direction: column; gap: 8px; }
+.side .foot-side b { color: var(--eel); display: block; font-size: 13px; }
+.main { flex: 1; min-width: 0; }
+section[id] { scroll-margin-top: 20px; }

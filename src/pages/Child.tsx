@@ -195,7 +195,7 @@ function History({ api, childId, tick }: { api: MoneyApi; childId: string; tick:
 
 /* ─── Page ──────────────────────────────────────────────────────────── */
 
-export function ChildPage({ api, childId, childName }: { api: MoneyApi; childId: string; childName: string }) {
+export function ChildPage({ api, childId, childName, onSectionSeen }: { api: MoneyApi; childId: string; childName: string; onSectionSeen?: (id: string) => void }) {
   const [view, setView] = useState<CapabilitiesView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -207,6 +207,14 @@ export function ChildPage({ api, childId, childName }: { api: MoneyApi; childId:
     catch (e) { setError(e instanceof ApiError && e.status === 403 ? "You are not a guardian of this child." : e instanceof Error ? e.message : "Something went wrong"); }
   }, [api, childId]);
   useEffect(() => { void load(); }, [load]);
+
+  // Tell the sidebar which section is on screen.
+  useEffect(() => {
+    if (!onSectionSeen || !view || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => { for (const e of entries) if (e.isIntersecting) onSectionSeen(e.target.id); }, { rootMargin: "-30% 0px -60% 0px" });
+    for (const id of ["overview", "switches", "moves", "history"]) { const el = document.getElementById(id); if (el) io.observe(el); }
+    return () => { io.disconnect(); };
+  }, [onSectionSeen, view]);
 
   const act = async (capability: string, verb: Verb, limit?: number): Promise<void> => {
     setBusy(capability);
@@ -229,10 +237,12 @@ export function ChildPage({ api, childId, childName }: { api: MoneyApi; childId:
   return (
     <div className="shell">
       <div className="top"><span className="wm"><img src="/suited-logo.svg" alt="Suited" /><b>Money</b></span><span className="who">For parents</span></div>
+      <section id="overview">
       <div className="eyebrow">{childName}{grade ? ` · Grade ${grade}` : ""}</div>
       <h1>{asks.length > 0 ? <>{asks.length === 1 ? "One thing" : `${asks.length} things`} <em>earned.</em> Your call.</> : <>Everything in <em>your</em> hands.</>}</h1>
       <p className="sub">{childName} earns a capability by finishing the strand that teaches it. Nothing changes on the card until you say so, and you can switch anything off at any time.</p>
       {error ? <div className="err">{error}</div> : null}
+      </section>
       {!view && !error ? <div className="card" style={{ marginTop: 20 }}><div className="meta">Loading…</div></div> : null}
       {view ? (
         <div className="grid">
@@ -240,13 +250,13 @@ export function ChildPage({ api, childId, childName }: { api: MoneyApi; childId:
             {asks.map((c) => <Ask key={c.capability} c={c} busy={busy === c.capability} onAct={(verb, limit) => void act(c.capability, verb, limit)} />)}
             <Hero name={childName} view={view} />
             <Stats view={view} />
-            <Switches view={view} busy={busy} onAct={(cap, verb, limit) => void act(cap, verb, limit)} />
+            <section id="switches"><Switches view={view} busy={busy} onAct={(cap, verb, limit) => void act(cap, verb, limit)} /></section>
             <div className="says"><img src="/family/frank.webp" alt="" /><div className="bubble"><div className="label">Frank, to {childName}</div><p>Every lesson in a strand gets you closer to the next unlock. Your parents say yes, the bank switches it on.</p></div></div>
           </div>
           <aside className="rail">
             <Limits view={view} />
-            {view.account ? <Recent acct={view.account} /> : null}
-            <History api={api} childId={childId} tick={tick} />
+            <section id="moves">{view.account ? <Recent acct={view.account} /> : null}</section>
+            <section id="history"><History api={api} childId={childId} tick={tick} /></section>
           </aside>
         </div>
       ) : null}
