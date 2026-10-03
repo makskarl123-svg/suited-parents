@@ -59,7 +59,7 @@ function BalanceHead({ name, view }: { name: string; view: CapabilitiesView }) {
         <div className="lbl">{name}'s card · at the bank</div>
         {acct ? <Money amount={acct.balance} currency={acct.currency} /> : <div className="big din" style={{ marginTop: 8, fontSize: 28 }}>Card on its way</div>}
       </div>
-      {acct && left !== undefined ? <div className="week num">{acct.currency} {whole(left)} left this week</div> : null}
+      {acct && left !== undefined && left < acct.balance ? <div className="week num" style={{ color: "var(--sunt)" }}>Only {acct.currency} {whole(left)} more this week</div> : null}
     </div>
   );
 }
