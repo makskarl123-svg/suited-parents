@@ -111,9 +111,17 @@ input.limit { font: inherit; font-weight: 700; width: 120px; min-height: 44px; b
 .obj { display: block; object-fit: contain; filter: var(--objshadow); flex: none; pointer-events: none; }
 .obj.dim { filter: grayscale(.75) opacity(.5) var(--objshadow); }
 /* the card as the hero */
-.card-hero { perspective: 1400px; padding: 10px 26px 18px; max-width: 640px; margin: 0 auto; width: 100%; }
-.card-hero img { display: block; width: 100%; border-radius: 18px; transform: rotateX(10deg) rotateZ(-5deg); filter: drop-shadow(0 34px 28px rgba(20, 83, 163, 0.30)); }
+.card-hero { perspective: 1200px; padding: 6px 4px 14px; max-width: 600px; margin: 0 auto; width: 100%; animation: money-rise 420ms cubic-bezier(.2,.9,.3,1.2) both; }
+@media (min-width: 768px) { .card-hero { padding: 8px 16px 16px; } }
+.card-hero img { display: block; width: 100%; border-radius: 18px; }
 .card-hero img.frozen { filter: grayscale(1) opacity(.55); }
+.money-card { position: relative; border-radius: 18px; transform-style: preserve-3d; transition: transform 480ms cubic-bezier(.2,.8,.2,1); filter: drop-shadow(0 24px 26px rgba(20,83,163,.28)); will-change: transform; }
+.money-card.is-on { transition: transform 80ms linear; }
+.money-sheen { position: absolute; inset: 0; border-radius: 18px; pointer-events: none; opacity: 0; transition: opacity 320ms; mix-blend-mode: screen; background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), rgba(255,255,255,.46) 0%, rgba(255,255,255,.14) 24%, transparent 58%); }
+.money-card.is-on .money-sheen { opacity: 1; }
+.money-sweep { position: absolute; inset: 0; border-radius: 18px; pointer-events: none; mix-blend-mode: screen; background: linear-gradient(112deg, transparent 38%, rgba(255,255,255,.38) 50%, transparent 62%); background-size: 260% 100%; background-position: 130% 0; animation: money-sweep 1.5s cubic-bezier(.45,0,.2,1) 420ms both; }
+@keyframes money-sweep { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+.frozen-chip { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 .balance { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 24px; }
 .balance .money { font-size: 60px; margin-top: 6px; }
 @media (min-width: 768px) { .balance .money { font-size: 84px; } }
@@ -176,6 +184,5 @@ section[id] { scroll-margin-top: 20px; }
 @keyframes money-rise { from { opacity: 0; transform: translateY(10px) scale(0.92); } to { opacity: 1; transform: none; } }
 @keyframes money-settle { from { opacity: 0; transform: rotateX(10deg) rotateZ(-9deg) translateY(16px); } to { opacity: 1; transform: rotateX(10deg) rotateZ(-5deg); } }
 .power { animation: money-rise 420ms cubic-bezier(.2,.9,.3,1.2) both; animation-delay: var(--d, 0ms); }
-.card-hero img { animation: money-settle 640ms cubic-bezier(.2,.8,.2,1) both; transition: transform 220ms cubic-bezier(.2,.8,.2,1); }
-@media (hover: hover) { .card-hero img:hover { transform: rotateX(8deg) rotateZ(-4deg) translateY(-4px); } }
-@media (prefers-reduced-motion: reduce) { .power, .card-hero img { animation: none; transition: none; } }
+@media (prefers-reduced-motion: reduce) { .power, .card-hero, .money-sweep { animation: none; } .money-card { transition: none; } }
+@media (max-width: 420px) { .power b { font-size: 12px; } .power small { font-size: 11px; } .balance .money { font-size: 54px; } }

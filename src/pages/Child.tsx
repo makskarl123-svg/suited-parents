@@ -4,7 +4,7 @@
  * Calm register, shared with the child's Money tab. Every number is the bank's
  * or the engine's; every switch is the parent's.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, type AccountView, type CapabilitiesView, type CapabilityView, type MoneyApi, type Pledge, type TopUpRequest, type Transaction, type Verb } from "../api";
 
 const NAMES: Record<string, string> = { shops: "Shops", online: "Online", transport: "Transport", cash_out: "Cash out", peer_transfer: "Friends", ceiling: "Weekly limit" };
@@ -63,9 +63,27 @@ function BalanceHead({ name, view }: { name: string; view: CapabilitiesView }) {
   );
 }
 
-/** The card as an object, the same one the child sees. */
+/** The card as an object, the same one the child sees: straight, lit by the pointer, one sweep on arrival. */
 function CardHero({ frozen }: { frozen: boolean }) {
-  return <div className="card-hero"><img src="/money/card.webp" alt="The card" className={frozen ? "frozen" : undefined} /></div>;
+  const ref = useRef<HTMLDivElement>(null);
+  const [t, setT] = useState({ rx: 0, ry: 0, x: 50, y: 50, on: false });
+  const [sweep, setSweep] = useState(0);
+  const move = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "mouse") return;
+    const r = ref.current?.getBoundingClientRect(); if (!r) return;
+    const px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+    setT({ rx: (0.5 - py) * 12, ry: (px - 0.5) * 14, x: px * 100, y: py * 100, on: true });
+  };
+  return (
+    <div className="card-hero">
+      <div ref={ref} className={`money-card${t.on ? " is-on" : ""}`} onPointerMove={move} onPointerLeave={() => { setT({ rx: 0, ry: 0, x: 50, y: 50, on: false }); }} onClick={() => { setSweep((n) => n + 1); }} style={{ transform: `rotateX(${t.rx}deg) rotateY(${t.ry}deg)` }}>
+        <img src="/money/card.webp" alt="The card" className={frozen ? "frozen" : undefined} />
+        {!frozen ? <div className="money-sheen" style={{ "--x": `${t.x}%`, "--y": `${t.y}%` } as React.CSSProperties} /> : null}
+        {!frozen ? <div key={sweep} className="money-sweep" /> : null}
+        {frozen ? <div className="frozen-chip"><span className="chip ice"><i />Frozen at the bank</span></div> : null}
+      </div>
+    </div>
+  );
 }
 
 type PowerState = "on" | "next" | "waiting" | "locked" | "off";
