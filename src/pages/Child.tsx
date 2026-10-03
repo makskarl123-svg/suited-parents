@@ -5,7 +5,7 @@
  * or the engine's; every switch is the parent's.
  */
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, type AccountView, type CapabilitiesView, type CapabilityView, type MoneyApi, type Transaction, type Verb } from "../api";
+import { ApiError, type AccountView, type CapabilitiesView, type CapabilityView, type MoneyApi, type TopUpRequest, type Transaction, type Verb } from "../api";
 
 const NAMES: Record<string, string> = { shops: "Shops", online: "Online payments", transport: "Transport", cash_out: "Cash out", peer_transfer: "Sending to friends", ceiling: "Weekly limit" };
 const SPRITES: Record<string, string> = { shops: "cart", online: "laptop", transport: "bus", cash_out: "bank", peer_transfer: "gift", ceiling: "coin" };
@@ -99,6 +99,54 @@ function Ask({ c, busy, onAct }: { c: CapabilityView; busy: boolean; onAct: (ver
   );
 }
 
+/** The child asked for money. Yes moves it through the bank; the amount is the child's unless the parent changes it. */
+function MoneyAsk({ r, childName, busy, onDecide }: { r: TopUpRequest; childName: string; busy: boolean; onDecide: (approve: boolean, amount?: number) => void }) {
+  const [amount, setAmount] = useState<string>(r.amount !== undefined ? String(r.amount) : "");
+  const n = Number(amount);
+  const ok = amount !== "" && Number.isFinite(n) && n > 0;
+  return (
+    <div className="block sun">
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+        <span style={{ width: 56, height: 56, borderRadius: 18, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}><Sprite name="moneybag" size={34} /></span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="label">{childName} asked · {dayLabel(r.at)}</div>
+          <div className="big" style={{ marginTop: 4 }}>"{r.note}"</div>
+          <p className="meta tint">{r.amount !== undefined ? `${childName} suggested ${r.currency} ${whole(r.amount)}. ` : `${childName} left the amount to you. `}Yes moves it from your account through the bank. Not now changes nothing.</p>
+          <div className="actions">
+            <label className="small tint" style={{ display: "flex", alignItems: "center", gap: 8 }}>AED <input className="limit num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount" aria-label="Amount in AED" /></label>
+            <button className="btn" disabled={busy || !ok} onClick={() => onDecide(true, n)}>Yes, send it</button>
+            <button className="btn ghost" disabled={busy} onClick={() => onDecide(false)}>Not now</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Add money: an amount, a note, through the bank. */
+function AddMoney({ childName, busy, onSend }: { childName: string; busy: boolean; onSend: (amount: number, description: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const n = Number(amount);
+  const ok = amount !== "" && Number.isFinite(n) && n > 0;
+  if (!open) return <button type="button" className="btn small" style={{ marginTop: 14, width: "100%" }} onClick={() => { setOpen(true); }}>Add money</button>;
+  return (
+    <div style={{ marginTop: 14, padding: 14, borderRadius: 16, background: "var(--polar)" }}>
+      <div className="small" style={{ marginBottom: 8 }}>Goes to {childName}'s account at the bank. Suited never holds it.</div>
+      <div className="actions" style={{ marginTop: 0 }}>
+        {[10, 20, 50].map((v) => <button type="button" key={v} className={`pill ${amount === String(v) ? "mint" : "grey"}`} style={{ cursor: "pointer", padding: "8px 12px", fontSize: 13 }} onClick={() => { setAmount(String(v)); }}>AED {v}</button>)}
+        <label className="small" style={{ display: "flex", alignItems: "center", gap: 8 }}>AED <input className="limit num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Other" aria-label="Amount in AED" style={{ width: 100 }} /></label>
+      </div>
+      <input className="limit" value={note} onChange={(e) => setNote(e.target.value)} maxLength={80} placeholder="A note for the card, e.g. Well done this week" aria-label="Note" style={{ width: "100%", marginTop: 10 }} />
+      <div className="actions">
+        <button className="btn small" disabled={busy || !ok} onClick={() => { onSend(n, note.trim() || "Top-up from you"); setOpen(false); setAmount(""); setNote(""); }}>Send AED {ok ? whole(n) : "…"}</button>
+        <button className="btn ghost small" disabled={busy} onClick={() => { setOpen(false); }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 function Switches({ view, busy, onAct }: { view: CapabilitiesView; busy: string | null; onAct: (capability: string, verb: Verb, limit?: number) => void }) {
   const caps = view.capabilities.filter((c) => !isCeiling(c));
   return (
@@ -153,7 +201,7 @@ function Recent({ acct }: { acct: AccountView }) {
   );
 }
 
-function Limits({ view }: { view: CapabilitiesView }) {
+function Limits({ view, childName, busy, onTopUp }: { view: CapabilitiesView; childName: string; busy: boolean; onTopUp: (amount: number, description: string) => void }) {
   const ceiling = view.capabilities.find(isCeiling);
   const acct = view.account ?? null;
   const topUp = acct?.transactions.find((t) => t.amount > 0);
@@ -171,6 +219,7 @@ function Limits({ view }: { view: CapabilitiesView }) {
           {ceiling.progress && ceiling.progress.total > 0 ? <><div className="bar" style={{ background: "#fff" }}><i style={{ width: `${Math.round((ceiling.progress.done / ceiling.progress.total) * 100)}%` }} /></div><div className="small" style={{ marginTop: 6 }}>{ceiling.progress.done} of {ceiling.progress.total} strands this year</div></> : null}
         </div>
       ) : null}
+      {view.account ? <AddMoney childName={childName} busy={busy} onSend={onTopUp} /> : null}
     </div>
   );
 }
@@ -231,7 +280,30 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
     }
   };
 
+  const topUp = async (amount: number, description: string): Promise<void> => {
+    setBusy("top-up");
+    try {
+      const r = await api.topUp(childId, amount, description);
+      setToast(`AED ${whole(r.transaction.amount)} on its way to ${childName}'s card`);
+      await load();
+      setTick((t) => t + 1);
+    } catch (e) { setToast(e instanceof Error ? e.message : "Something went wrong"); }
+    finally { setBusy(null); setTimeout(() => { setToast(null); }, 2600); }
+  };
+  const decide = async (r: TopUpRequest, approve: boolean, amount?: number): Promise<void> => {
+    setBusy(r.id);
+    try {
+      const out = await api.decideRequest(childId, r.id, approve, amount);
+      setToast(approve && out.transaction ? `Sent AED ${whole(out.transaction.amount)} to ${childName}` : "Told them not now");
+      await load();
+      setTick((t) => t + 1);
+    } catch (e) { setToast(e instanceof Error ? e.message : "Something went wrong"); }
+    finally { setBusy(null); setTimeout(() => { setToast(null); }, 2600); }
+  };
+
   const asks = view?.capabilities.filter((c) => c.state === "Requested") ?? [];
+  const moneyAsks = view?.requests ?? [];
+  const totalAsks = asks.length + moneyAsks.length;
   const grade = view ? (/(\d{1,2})/.exec(view.gateSet)?.[1] ?? "") : "";
 
   return (
@@ -239,7 +311,7 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
       <div className="top"><span className="wm"><img src="/suited-logo.svg" alt="Suited" /><b>Money</b></span><span className="who">For parents</span></div>
       <section id="overview">
       <div className="eyebrow">{childName}{grade ? ` · Grade ${grade}` : ""}</div>
-      <h1>{asks.length > 0 ? <>{asks.length === 1 ? "One thing" : `${asks.length} things`} <em>earned.</em> Your call.</> : <>Everything in <em>your</em> hands.</>}</h1>
+      <h1>{totalAsks > 0 ? <>{totalAsks === 1 ? "One thing" : `${totalAsks} things`} <em>waiting.</em> Your call.</> : <>Everything in <em>your</em> hands.</>}</h1>
       <p className="sub">{childName} earns a capability by finishing the strand that teaches it. Nothing changes on the card until you say so, and you can switch anything off at any time.</p>
       {error ? <div className="err">{error}</div> : null}
       </section>
@@ -248,13 +320,14 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
         <div className="grid">
           <div className="col">
             {asks.map((c) => <Ask key={c.capability} c={c} busy={busy === c.capability} onAct={(verb, limit) => void act(c.capability, verb, limit)} />)}
+            {moneyAsks.map((r) => <MoneyAsk key={r.id} r={r} childName={childName} busy={busy === r.id} onDecide={(approve, amount) => void decide(r, approve, amount)} />)}
             <Hero name={childName} view={view} />
             <Stats view={view} />
             <section id="switches"><Switches view={view} busy={busy} onAct={(cap, verb, limit) => void act(cap, verb, limit)} /></section>
             <div className="says"><img src="/family/frank.webp" alt="" /><div className="bubble"><div className="label">Frank, to {childName}</div><p>Every lesson in a strand gets you closer to the next unlock. Your parents say yes, the bank switches it on.</p></div></div>
           </div>
           <aside className="rail">
-            <Limits view={view} />
+            <Limits view={view} childName={childName} busy={busy === "top-up"} onTopUp={(a, d) => void topUp(a, d)} />
             <section id="moves">{view.account ? <Recent acct={view.account} /> : null}</section>
             <section id="history"><History api={api} childId={childId} tick={tick} /></section>
           </aside>
