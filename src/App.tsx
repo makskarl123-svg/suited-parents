@@ -33,10 +33,10 @@ function Inner() {
   return (
     <>
       {error ? <div className="shell"><div className="err">{error}</div></div> : null}
-      {!error && children === null ? <div className="shell"><div className="card"><div className="meta">Loading…</div></div></div> : null}
+      {!error && children === null ? <div className="shell"><div className="card" style={{ marginTop: 20 }}><div className="meta">Loading…</div></div></div> : null}
       {!error && children !== null && children.length === 0 ? (
         <div className="shell">
-          <div className="top"><span className="wm"><img src="/suited-logo.svg" alt="Suited" /><b>Money</b></span></div>
+          <div className="top"><span className="wm"><img src="/suited-logo.svg" alt="Suited" /><b>Money</b></span><span className="who">For parents</span></div>
           <div className="eyebrow">Signed in as {guardianLabel}</div>
           <h1>No children <em>linked yet.</em></h1>
           <p className="sub">When your child's school enrols them in Suited Money and you give consent, they appear here. Nothing to do for now.</p>
@@ -44,7 +44,7 @@ function Inner() {
       ) : null}
       {!error && children !== null && children.length > 1 && !current ? (
         <div className="shell">
-          <div className="top"><span className="wm"><img src="/suited-logo.svg" alt="Suited" /><b>Money</b></span></div>
+          <div className="top"><span className="wm"><img src="/suited-logo.svg" alt="Suited" /><b>Money</b></span><span className="who">For parents</span></div>
           <div className="eyebrow">Your children</div>
           <h1>Who are we <em>looking at?</em></h1>
           <div className="pick">

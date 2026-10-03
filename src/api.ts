@@ -18,7 +18,11 @@ export interface CapabilityView {
   progress: { done: number; total: number; missing: string[] } | null;
 }
 
-export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[] }
+export interface Transaction { id: string; at: string; amount: number; currency: string; description: string; control?: string }
+/** The bank's view of the account, read by the Money service through its connector. Null until the bank has a card. */
+export interface AccountView { currency: string; balance: number; week: { spent: number; limit?: number; startedOn: string }; transactions: Transaction[] }
+
+export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[]; account?: AccountView | null }
 export interface Snapshot { capability: string; state: CapabilityState; label: string; earnedAt: string | null; limit: Limit | null }
 export interface AuditEntry { at: string; childId: string; capability?: string; what: string; requestId?: string; actor?: string }
 
