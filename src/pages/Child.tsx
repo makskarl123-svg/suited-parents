@@ -9,10 +9,11 @@ import { ApiError, type AccountView, type CapabilitiesView, type CapabilityView,
 
 const NAMES: Record<string, string> = { shops: "Shops", online: "Online", transport: "Transport", cash_out: "Cash out", peer_transfer: "Friends", ceiling: "Weekly limit" };
 /** One illustrated object per capability (public/money/art). Sprites stand in until the matched objects are generated. */
-const ART: Record<string, string> = { shops: "/money/art/bag.webp", online: "/money/art/phone-tap.webp", transport: "/money/art/metro.webp", cash_out: "/sprites/item-bank.webp", peer_transfer: "/sprites/item-plane.webp", ceiling: "/sprites/item-coin.webp" };
-const ART_GIFT = "/sprites/item-gift.webp";
+const ART: Record<string, string> = { shops: "/money/art/bag.webp", online: "/money/art/phone-tap.webp", transport: "/money/art/metro.webp", cash_out: "/money/art/atm.webp", peer_transfer: "/money/art/plane-coin.webp", ceiling: "/money/art/coin-stack.webp" };
+const ART_GIFT = "/money/art/gift.webp";
+const ART_SNOWFLAKE = "/money/art/snowflake.webp";
 const nameOf = (c: CapabilityView): string => NAMES[c.capability] ?? c.gateName;
-const artOf = (id: string): string => ART[id] ?? "/sprites/item-coin.webp";
+const artOf = (id: string): string => ART[id] ?? "/money/art/coin-stack.webp";
 const artForTx = (t: Transaction): string => t.amount > 0 ? ART_GIFT : artOf(t.control === "transit_mcc" ? "transport" : t.control === "ecommerce" ? "online" : t.control === "atm" ? "cash_out" : t.control === "p2p" ? "peer_transfer" : "shops");
 const isOn = (c: CapabilityView): boolean => c.state === "Active" || c.state === "ActiveByParent" || (c.capability === "shops" && c.state === "Earned") || (c.capability === "ceiling" && c.state === "Earned");
 const isCeiling = (c: CapabilityView): boolean => c.capability === "ceiling";
@@ -365,8 +366,9 @@ function CardControl({ view, childName, busy, onSet }: { view: CapabilitiesView;
   const card = view.card ?? null;
   if (!card) return null;
   return (
-    <div className={card.frozen ? "block ice" : "card"}>
-      <div>
+    <div className={card.frozen ? "block ice obj-row" : "card obj-row"}>
+      <Obj src={ART_SNOWFLAKE} size={56} />
+      <div className="words">
         <div className="title">{card.frozen ? "Card frozen" : "The card"}</div>
         <div className="small">{card.frozen ? `Nothing works until you unfreeze it. ${childName} sees it as frozen too.` : `Lost or left somewhere? Freeze it at the bank in one tap. Unfreeze when it turns up.`}</div>
         <div className="actions">

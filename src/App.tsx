@@ -9,10 +9,10 @@ import { InvitePage } from "./pages/Invite";
 const API_BASE: string = (import.meta.env["VITE_MONEY_API_URL"] as string | undefined) ?? "/api";
 
 const SECTIONS: { id: string; label: string; sprite: string }[] = [
-  { id: "overview", label: "Overview", sprite: "/sprites/item-coin.webp" },
+  { id: "overview", label: "Overview", sprite: "/money/art/coin-stack.webp" },
   { id: "switches", label: "Every switch", sprite: "/money/art/metro.webp" },
   { id: "moves", label: "Money moves", sprite: "/money/art/bag.webp" },
-  { id: "history", label: "History", sprite: "/sprites/item-book.webp" },
+  { id: "history", label: "History", sprite: "/money/art/shield.webp" },
 ];
 
 /** The wide-screen sidebar: the product's sections, the guardian's children, who is signed in. */
