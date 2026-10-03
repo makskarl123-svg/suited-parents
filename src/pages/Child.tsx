@@ -388,7 +388,7 @@ function Fund({ view, childName, busy, onAdd }: { view: CapabilitiesView; childN
         <div className="title">The 18 Fund</div>
         <div className="small">A high-yield savings account at the bank for {childName} at 18, on the bank's terms. {childName} can see it and cannot touch it.</div>
         <div className="money" style={{ fontSize: 30 }}><span className="cur">{f?.currency ?? "AED"}</span>{whole(f?.balance ?? 0)}</div>
-        {f && f.contributions.length > 0 ? <div className="small" style={{ marginTop: 6 }}>{f.contributions.slice(0, 3).map((c) => `${c.description} · AED ${whole(c.amount)} · ${dayLabel(c.at)}`).join(" · ")}</div> : null}
+        {f && f.contributions.length > 0 ? <div className="small" style={{ marginTop: 6 }}>{f.contributions.slice(0, 3).map((c) => `${c.description === "From the card" ? `From ${childName}` : c.description} · AED ${whole(c.amount)} · ${dayLabel(c.at)}`).join(" · ")}</div> : null}
         {!open ? (
           <div className="actions"><button className="btn small" disabled={busy} onClick={() => { setOpen(true); }}>Add to the fund</button></div>
         ) : (
