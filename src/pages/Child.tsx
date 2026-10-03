@@ -5,7 +5,7 @@
  * or the engine's; every switch is the parent's.
  */
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, type AccountView, type CapabilitiesView, type CapabilityView, type MoneyApi, type TopUpRequest, type Transaction, type Verb } from "../api";
+import { ApiError, type AccountView, type CapabilitiesView, type CapabilityView, type MoneyApi, type Pledge, type TopUpRequest, type Transaction, type Verb } from "../api";
 
 const NAMES: Record<string, string> = { shops: "Shops", online: "Online payments", transport: "Transport", cash_out: "Cash out", peer_transfer: "Sending to friends", ceiling: "Weekly limit" };
 const SPRITES: Record<string, string> = { shops: "cart", online: "laptop", transport: "bus", cash_out: "bank", peer_transfer: "gift", ceiling: "coin" };
@@ -16,6 +16,7 @@ const isCeiling = (c: CapabilityView): boolean => c.capability === "ceiling";
 const whole = (n: number): string => Math.floor(Math.abs(n)).toLocaleString("en-US");
 const fils = (n: number): string => Math.round((Math.abs(n) % 1) * 100).toString().padStart(2, "0");
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAYS_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 function dayLabel(iso: string): string {
   const d = new Date(iso); if (Number.isNaN(d.getTime())) return "";
   const a = new Date(); a.setHours(0, 0, 0, 0); const b = new Date(d); b.setHours(0, 0, 0, 0);
@@ -201,15 +202,109 @@ function Recent({ acct }: { acct: AccountView }) {
   );
 }
 
-function Limits({ view, childName, busy, onTopUp }: { view: CapabilitiesView; childName: string; busy: boolean; onTopUp: (amount: number, description: string) => void }) {
+/** Pocket money: an amount on a weekday, moved by the bank every week until stopped. */
+function AllowanceEditor({ view, childName, busy, onSet, onClear }: { view: CapabilitiesView; childName: string; busy: boolean; onSet: (amount: number, day: number) => void; onClear: () => void }) {
+  const a = view.allowance ?? null;
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState(a ? String(a.amount) : "15");
+  const [day, setDay] = useState(a ? a.dayOfWeek : 5);
+  const n = Number(amount);
+  const ok = amount !== "" && Number.isFinite(n) && n > 0;
+  if (!open) {
+    return a ? (
+      <div style={{ marginTop: 14 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}><Money amount={a.amount} currency={a.currency} size={30} /><span className="small">every {DAYS_LONG[a.dayOfWeek]}</span></div>
+        <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 12, background: "var(--polar)", borderRadius: 16, padding: "10px 14px" }}>
+          <span style={{ width: 44, height: 44, borderRadius: 12, background: "#fff", border: "1.5px solid var(--swan)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: "none" }}><span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: "var(--hare)" }}>{DAYS[a.dayOfWeek]}</span><span className="num" style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)", lineHeight: 1 }}>{a.next.on.slice(8, 10)}</span></span>
+          <div style={{ flex: 1 }}><b style={{ fontSize: 13.5, color: "var(--ink)" }}>Next payday: {DAYS_LONG[a.dayOfWeek]}</b><div className="small">{a.next.daysUntil === 0 ? "Today" : a.next.daysUntil === 1 ? "Tomorrow" : `In ${a.next.daysUntil} days`} · set by {a.setBy}</div></div>
+        </div>
+        <div className="actions" style={{ marginTop: 10 }}><button type="button" className="link" onClick={() => { setOpen(true); }}>Change</button><button type="button" className="link" style={{ color: "var(--cardinald)" }} disabled={busy} onClick={onClear}>Stop</button></div>
+      </div>
+    ) : (
+      <div style={{ marginTop: 14 }}>
+        <div className="meta">No pocket money set. A weekly amount lands on {childName}'s card on the day you choose, moved by the bank.</div>
+        <button type="button" className="btn ghost small" style={{ marginTop: 10 }} onClick={() => { setOpen(true); }}>Set pocket money</button>
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: 14, padding: 14, borderRadius: 16, background: "var(--polar)" }}>
+      <div className="small" style={{ marginBottom: 8 }}>Every week on the day you pick, moved from your account by the bank.</div>
+      <div className="actions" style={{ marginTop: 0 }}>
+        {[10, 15, 20, 30].map((v) => <button type="button" key={v} className={`pill ${amount === String(v) ? "mint" : "grey"}`} style={{ cursor: "pointer", padding: "8px 12px", fontSize: 13 }} onClick={() => { setAmount(String(v)); }}>AED {v}</button>)}
+        <label className="small" style={{ display: "flex", alignItems: "center", gap: 8 }}>AED <input className="limit num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount in AED" style={{ width: 90 }} /></label>
+      </div>
+      <div className="actions" style={{ marginTop: 10 }}>
+        {DAYS.map((d, i) => <button type="button" key={d} className={`pill ${day === i ? "mint" : "grey"}`} style={{ cursor: "pointer", padding: "8px 11px", fontSize: 12.5 }} onClick={() => { setDay(i); }}>{d}</button>)}
+      </div>
+      <div className="actions">
+        <button className="btn small" disabled={busy || !ok} onClick={() => { onSet(n, day); setOpen(false); }}>Save: AED {ok ? whole(n) : "…"} every {DAYS_LONG[day]}</button>
+        <button className="btn ghost small" disabled={busy} onClick={() => { setOpen(false); }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+/** Pledges: "AED 50 when Budgeting is done". Kept by the bank the moment the strand completes. */
+function Pledges({ view, childName, busy, onPledge, onCancel }: { view: CapabilitiesView; childName: string; busy: boolean; onPledge: (capability: string, amount: number, note: string) => void; onCancel: (id: string) => void }) {
+  const pledges = view.pledges ?? [];
+  const open = pledges.filter((p) => p.status === "open");
+  const paid: Pledge[] = pledges.filter((p) => p.status === "paid").slice(-3).reverse();
+  const candidates = view.capabilities.filter((c) => !isCeiling(c) && !isOn(c) && c.state === "Locked" && !open.some((p) => p.capability === c.capability));
+  const [adding, setAdding] = useState(false);
+  const [cap, setCap] = useState<string>(candidates[0]?.capability ?? "");
+  const [amount, setAmount] = useState("50");
+  const [note, setNote] = useState("");
+  const n = Number(amount);
+  const ok = cap !== "" && amount !== "" && Number.isFinite(n) && n > 0;
+  return (
+    <div className="card">
+      <div className="title">Pledges</div>
+      <div className="small">A promise {childName} can see. The bank keeps it the moment the strand is done.</div>
+      {open.map((p) => (
+        <div key={p.id} style={{ marginTop: 12, padding: "12px 14px", borderRadius: 16, background: "var(--mint)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+            <div><b style={{ fontSize: 14, color: "var(--ink)" }} className="num">AED {whole(p.amount)}</b><span style={{ fontSize: 13, color: "var(--mintt)" }}> when {p.gateName} is done</span>{p.note ? <div className="small" style={{ color: "var(--mintt)" }}>"{p.note}"</div> : null}<div className="small" style={{ color: "var(--mintt)" }}>by {p.madeBy}</div></div>
+            <button type="button" className="link" style={{ color: "var(--mintt)" }} disabled={busy} onClick={() => onCancel(p.id)}>Cancel</button>
+          </div>
+        </div>
+      ))}
+      {paid.map((p) => (
+        <div key={p.id} style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 2px" }}>
+          <div><b style={{ fontSize: 13.5, color: "var(--ink)" }}>{p.gateName} done</b><div className="small">Kept{p.paidAt ? ` · ${dayLabel(p.paidAt)}` : ""} · by {p.madeBy}</div></div>
+          <span className="num" style={{ fontWeight: 800, color: "var(--treefrog)" }}>+{whole(p.amount)}.00</span>
+        </div>
+      ))}
+      {!adding ? (
+        candidates.length > 0 ? <button type="button" className="btn ghost small" style={{ marginTop: 12 }} onClick={() => { setAdding(true); setCap(candidates[0]?.capability ?? ""); }}>Pledge a reward</button> : <div className="small" style={{ marginTop: 10 }}>Every strand is either earned or already pledged.</div>
+      ) : (
+        <div style={{ marginTop: 12, padding: 14, borderRadius: 16, background: "var(--polar)" }}>
+          <div className="small" style={{ marginBottom: 8 }}>Pick the strand, then the amount. It moves only when the strand completes.</div>
+          <div className="actions" style={{ marginTop: 0 }}>
+            {candidates.map((c) => <button type="button" key={c.capability} className={`pill ${cap === c.capability ? "mint" : "grey"}`} style={{ cursor: "pointer", padding: "8px 12px", fontSize: 12.5 }} onClick={() => { setCap(c.capability); }}>{c.gateName}</button>)}
+          </div>
+          <div className="actions">
+            {[20, 50, 100].map((v) => <button type="button" key={v} className={`pill ${amount === String(v) ? "mint" : "grey"}`} style={{ cursor: "pointer", padding: "8px 12px", fontSize: 13 }} onClick={() => { setAmount(String(v)); }}>AED {v}</button>)}
+            <label className="small" style={{ display: "flex", alignItems: "center", gap: 8 }}>AED <input className="limit num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount in AED" style={{ width: 90 }} /></label>
+          </div>
+          <input className="limit" value={note} onChange={(e) => setNote(e.target.value)} maxLength={80} placeholder="A word for the card, e.g. For sticking with it" aria-label="Note" style={{ width: "100%", marginTop: 10 }} />
+          <div className="actions">
+            <button className="btn small" disabled={busy || !ok} onClick={() => { onPledge(cap, n, note.trim()); setAdding(false); setNote(""); }}>Pledge AED {ok ? whole(n) : "…"}</button>
+            <button className="btn ghost small" disabled={busy} onClick={() => { setAdding(false); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Limits({ view, childName, busy, onTopUp, onSetAllowance, onClearAllowance }: { view: CapabilitiesView; childName: string; busy: boolean; onTopUp: (amount: number, description: string) => void; onSetAllowance: (amount: number, day: number) => void; onClearAllowance: () => void }) {
   const ceiling = view.capabilities.find(isCeiling);
-  const acct = view.account ?? null;
-  const topUp = acct?.transactions.find((t) => t.amount > 0);
   return (
     <div className="card">
       <div className="title">Pocket money and limits</div>
-      <div className="small">What goes in, and the ceiling the bank applies.</div>
-      {topUp ? <div style={{ marginTop: 14 }}><Money amount={topUp.amount} currency={topUp.currency} size={30} /><div className="small" style={{ marginTop: 4 }}>{topUp.description} · {dayLabel(topUp.at)}</div></div> : <div className="meta" style={{ marginTop: 12 }}>No top-ups yet.</div>}
+      <div className="small">What goes in every week, and the ceiling the bank applies.</div>
+      <AllowanceEditor view={view} childName={childName} busy={busy} onSet={onSetAllowance} onClear={onClearAllowance} />
       {ceiling ? (
         <div style={{ marginTop: 14, background: "var(--polar)", borderRadius: 16, padding: "12px 14px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
@@ -301,6 +396,17 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
     finally { setBusy(null); setTimeout(() => { setToast(null); }, 2600); }
   };
 
+  const run = async (label: string, fn: () => Promise<string>): Promise<void> => {
+    setBusy(label);
+    try { setToast(await fn()); await load(); setTick((t) => t + 1); }
+    catch (e) { setToast(e instanceof Error ? e.message : "Something went wrong"); }
+    finally { setBusy(null); setTimeout(() => { setToast(null); }, 2600); }
+  };
+  const setAllowance = (amount: number, day: number) => run("allowance", async () => { const r = await api.setAllowance(childId, amount, day); return `AED ${whole(r.allowance.amount)} every ${DAYS_LONG[r.allowance.dayOfWeek]}`; });
+  const clearAllowance = () => run("allowance", async () => { await api.clearAllowance(childId); return "Pocket money stopped"; });
+  const makePledge = (capability: string, amount: number, note: string) => run("pledge", async () => { const r = await api.pledge(childId, capability, amount, note || undefined); return `Pledged AED ${whole(r.pledge.amount)} for ${r.pledge.gateName}`; });
+  const cancelPledge = (id: string) => run("pledge", async () => { await api.cancelPledge(childId, id); return "Pledge cancelled"; });
+
   const asks = view?.capabilities.filter((c) => c.state === "Requested") ?? [];
   const moneyAsks = view?.requests ?? [];
   const totalAsks = asks.length + moneyAsks.length;
@@ -327,7 +433,8 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
             <div className="says"><img src="/family/frank.webp" alt="" /><div className="bubble"><div className="label">Frank, to {childName}</div><p>Every lesson in a strand gets you closer to the next unlock. Your parents say yes, the bank switches it on.</p></div></div>
           </div>
           <aside className="rail">
-            <Limits view={view} childName={childName} busy={busy === "top-up"} onTopUp={(a, d) => void topUp(a, d)} />
+            <Limits view={view} childName={childName} busy={busy === "top-up" || busy === "allowance"} onTopUp={(a, d) => void topUp(a, d)} onSetAllowance={(a, d) => void setAllowance(a, d)} onClearAllowance={() => void clearAllowance()} />
+            <Pledges view={view} childName={childName} busy={busy === "pledge"} onPledge={(c, a, n) => void makePledge(c, a, n)} onCancel={(id) => void cancelPledge(id)} />
             <section id="moves">{view.account ? <Recent acct={view.account} /> : null}</section>
             <section id="history"><History api={api} childId={childId} tick={tick} /></section>
           </aside>
