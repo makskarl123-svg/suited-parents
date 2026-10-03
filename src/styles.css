@@ -171,3 +171,11 @@ input.limit { font: inherit; font-weight: 700; width: 120px; min-height: 44px; b
 .main { flex: 1; min-width: 0; }
 section[id] { scroll-margin-top: 20px; }
 @media (min-width: 1024px) { .main .top .wm { visibility: hidden; } }
+
+/* ─── Motion. Explains, never decorates. ───────────────────────────── */
+@keyframes money-rise { from { opacity: 0; transform: translateY(10px) scale(0.92); } to { opacity: 1; transform: none; } }
+@keyframes money-settle { from { opacity: 0; transform: rotateX(10deg) rotateZ(-9deg) translateY(16px); } to { opacity: 1; transform: rotateX(10deg) rotateZ(-5deg); } }
+.power { animation: money-rise 420ms cubic-bezier(.2,.9,.3,1.2) both; animation-delay: var(--d, 0ms); }
+.card-hero img { animation: money-settle 640ms cubic-bezier(.2,.8,.2,1) both; transition: transform 220ms cubic-bezier(.2,.8,.2,1); }
+@media (hover: hover) { .card-hero img:hover { transform: rotateX(8deg) rotateZ(-4deg) translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .power, .card-hero img { animation: none; transition: none; } }

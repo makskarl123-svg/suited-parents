@@ -86,10 +86,10 @@ function Powers({ view }: { view: CapabilitiesView }) {
   const next = caps.find((c) => c.state === "Locked");
   return (
     <div className="powers" style={{ gridTemplateColumns: `repeat(${caps.length}, minmax(0, 1fr))` }}>
-      {caps.map((c) => {
+      {caps.map((c, i) => {
         const st = powerState(c, next);
         return (
-          <button type="button" key={c.capability} className="power" onClick={() => document.getElementById("switches")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+          <button type="button" key={c.capability} className="power" style={{ "--d": `${120 + i * 70}ms` } as React.CSSProperties} onClick={() => document.getElementById("switches")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
             <span className={`disc ${st}`}><Obj src={artOf(c.capability)} dim={st === "locked"} />{st === "locked" ? <Lock /> : null}</span>
             <b>{nameOf(c)}</b>
             <small className={st}>{powerLine(c, st)}</small>
