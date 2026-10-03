@@ -187,3 +187,16 @@ section[id] { scroll-margin-top: 20px; }
 .power { animation: money-rise 420ms cubic-bezier(.2,.9,.3,1.2) both; animation-delay: var(--d, 0ms); }
 @media (prefers-reduced-motion: reduce) { .power, .card-hero, .money-sweep { animation: none; } .money-card { transition: none; } }
 @media (max-width: 420px) { .power b { font-size: 12px; } .power small { font-size: 11px; } .balance .money { font-size: 54px; } }
+
+/* ─── What a parent came to do ─────────────────────────────────────── */
+.do { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.do-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 14px 16px; border-radius: 20px; background: #fff; box-shadow: 0 3px 0 var(--swan), 0 0 0 1.5px var(--swan); text-align: left; min-height: 112px; transition: transform 100ms; }
+.do-btn:active { transform: translateY(2px); }
+.do-btn .obj { margin-bottom: 8px; }
+.do-btn b { font-size: 15px; font-weight: 800; color: var(--ink); }
+.do-btn small { font-size: 12px; color: var(--wolf); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.do-btn.on { background: var(--mint); box-shadow: 0 4px 0 var(--minte); }
+.do-btn.ice { background: var(--ice); box-shadow: 0 4px 0 var(--icem); }
+.do-btn:disabled { opacity: .5; }
+.sheet { margin-top: 12px; padding: 16px; border-radius: 20px; background: var(--polar); }
+@media (max-width: 420px) { .do { gap: 8px; } .do-btn { padding: 12px; min-height: 100px; } .do-btn b { font-size: 13.5px; } .do-btn small { font-size: 11px; } }

@@ -14,6 +14,8 @@ export interface CapabilityView {
   label: string;
   earnedAt: string | null;
   limit: Limit | null;
+  /** For the ceiling gate: the band the child moves to when it completes. */
+  nextLimit?: Limit | null;
   lastActor: string | null;
   progress: { done: number; total: number; missing: string[] } | null;
 }
