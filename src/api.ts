@@ -28,7 +28,7 @@ export interface TopUpRequest { id: string; childId: string; amount?: number; cu
 export interface Allowance { amount: number; currency: string; dayOfWeek: number; description: string; setBy: string; lastPaidOn?: string | null; next: { on: string; daysUntil: number } }
 export interface Pledge { id: string; childId: string; capability: string; gateName: string; amount: number; currency: string; note: string; madeBy: string; madeAt: string; status: "open" | "paid" | "cancelled"; paidAt?: string; bankRef?: string }
 
-export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[]; account?: AccountView | null; requests?: TopUpRequest[]; allowance?: Allowance | null; pledges?: Pledge[] }
+export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[]; account?: AccountView | null; requests?: TopUpRequest[]; allowance?: Allowance | null; pledges?: Pledge[]; card?: { frozen: boolean } | null }
 export interface Snapshot { capability: string; state: CapabilityState; label: string; earnedAt: string | null; limit: Limit | null }
 export interface AuditEntry { at: string; childId: string; capability?: string; what: string; requestId?: string; actor?: string }
 
@@ -93,6 +93,11 @@ export class MoneyApi {
 
   cancelPledge(childId: string, pledgeId: string): Promise<{ pledge: Pledge }> {
     return this.call(`/children/${encodeURIComponent(childId)}/pledges/${encodeURIComponent(pledgeId)}/cancel`, { method: "POST", body: "{}" });
+  }
+
+  /** Freeze or unfreeze the card at the bank. */
+  setFrozen(childId: string, frozen: boolean): Promise<{ card: { frozen: boolean } }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/card/${frozen ? "freeze" : "unfreeze"}`, { method: "POST", body: "{}" });
   }
 
   audit(childId: string): Promise<{ childId: string; entries: AuditEntry[] }> {

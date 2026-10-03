@@ -47,8 +47,10 @@ const Sprite = ({ name, size = 24 }: { name: string; size?: number }) => <img sr
 function Hero({ name, view }: { name: string; view: CapabilitiesView }) {
   const acct = view.account ?? null;
   const caps = view.capabilities.filter((c) => !isCeiling(c));
+  const frozen = view.card?.frozen === true;
   return (
-    <div className="block sky">
+    <div className={`block ${frozen ? "rose" : "sky"}`}>
+      {frozen ? <div className="pill rose" style={{ marginBottom: 10 }}>Card frozen at the bank</div> : null}
       <div className="hero-text">
         <div className="label">{name}'s money</div>
         {acct ? <Money amount={acct.balance} currency={acct.currency} /> : <div className="big" style={{ marginTop: 8 }}>Card on its way</div>}
@@ -70,9 +72,9 @@ function Stats({ view }: { view: CapabilitiesView }) {
   const left = acct && acct.week.limit !== undefined ? Math.max(0, acct.week.limit - acct.week.spent) : undefined;
   return (
     <div className="stats">
-      <div className="stat block mint"><div className="label"><Sprite name="coin" size={16} />This week</div><div className="v num">{acct && left !== undefined ? `${acct.currency} ${whole(left)}` : "No limit"}</div><div className="small tint" style={{ marginTop: 6 }}>{acct && acct.week.limit !== undefined ? `of ${acct.week.limit} left` : "Set with the bank"}</div></div>
-      <div className="stat block sun"><div className="label"><Sprite name="crown" size={16} />Your call</div><div className="v num">{asks}</div><div className="small tint" style={{ marginTop: 6 }}>{asks === 1 ? "earned, waiting" : "earned, waiting"}</div></div>
-      <div className="stat block sky"><div className="label"><Sprite name="bus" size={16} />Unlocked</div><div className="v num">{on} of {caps.length}</div><div className="small tint" style={{ marginTop: 6 }}>earned by learning</div></div>
+      <div className="stat block mint"><img className="hero-art" src="/sprites/item-coin.webp" alt="" style={{ width: 60, right: -6, top: -4 }} /><div className="label">This week</div><div className="v num">{acct && left !== undefined ? `${acct.currency} ${whole(left)}` : "No limit"}</div><div className="small tint" style={{ marginTop: 6 }}>{acct && acct.week.limit !== undefined ? `of ${acct.week.limit} left` : "Set with the bank"}</div></div>
+      <div className="stat block sun"><img className="hero-art" src="/sprites/item-crown.webp" alt="" style={{ width: 60, right: -6, top: -4 }} /><div className="label">Your call</div><div className="v num">{asks}</div><div className="small tint" style={{ marginTop: 6 }}>{asks === 1 ? "earned, waiting" : "earned, waiting"}</div></div>
+      <div className="stat block sky"><img className="hero-art" src="/sprites/item-bus.webp" alt="" style={{ width: 60, right: -6, top: -4 }} /><div className="label">Unlocked</div><div className="v num">{on} of {caps.length}</div><div className="small tint" style={{ marginTop: 6 }}>earned by learning</div></div>
     </div>
   );
 }
@@ -83,9 +85,9 @@ function Ask({ c, busy, onAct }: { c: CapabilityView; busy: boolean; onAct: (ver
   const limitArg = c.capability === "cash_out" && limit !== "" && Number.isFinite(n) && n >= 0 ? n : undefined;
   return (
     <div className="block sun">
+      <img className="hero-art" src={`/sprites/item-${spriteOf(c.capability)}.webp`} alt="" style={{ width: 130, right: -10, top: -8, transform: "rotate(-8deg)" }} />
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-        <span style={{ width: 56, height: 56, borderRadius: 18, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}><Sprite name={spriteOf(c.capability)} size={34} /></span>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, paddingRight: 110, position: "relative", zIndex: 1 }}>
           <div className="label">Earned · your call</div>
           <div className="big" style={{ marginTop: 4 }}>{nameOf(c)}</div>
           <p className="meta tint">{c.gateName} is finished. Say yes and the bank switches it on. Say not yet and nothing changes; the badge stays earned.</p>
@@ -107,9 +109,9 @@ function MoneyAsk({ r, childName, busy, onDecide }: { r: TopUpRequest; childName
   const ok = amount !== "" && Number.isFinite(n) && n > 0;
   return (
     <div className="block sun">
+      <img className="hero-art" src="/sprites/item-moneybag.webp" alt="" style={{ width: 130, right: -10, top: -8, transform: "rotate(8deg)" }} />
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-        <span style={{ width: 56, height: 56, borderRadius: 18, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}><Sprite name="moneybag" size={34} /></span>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, paddingRight: 110, position: "relative", zIndex: 1 }}>
           <div className="label">{childName} asked · {dayLabel(r.at)}</div>
           <div className="big" style={{ marginTop: 4 }}>"{r.note}"</div>
           <p className="meta tint">{r.amount !== undefined ? `${childName} suggested ${r.currency} ${whole(r.amount)}. ` : `${childName} left the amount to you. `}Yes moves it from your account through the bank. Not now changes nothing.</p>
@@ -262,7 +264,8 @@ function Pledges({ view, childName, busy, onPledge, onCancel }: { view: Capabili
       <div className="title">Pledges</div>
       <div className="small">A promise {childName} can see. The bank keeps it the moment the strand is done.</div>
       {open.map((p) => (
-        <div key={p.id} style={{ marginTop: 12, padding: "12px 14px", borderRadius: 16, background: "var(--mint)" }}>
+        <div key={p.id} style={{ marginTop: 12, padding: "12px 14px", borderRadius: 16, background: "var(--mint)", position: "relative", overflow: "hidden" }}>
+          <img className="hero-art" src="/sprites/item-moneybag.webp" alt="" style={{ width: 72, right: -8, bottom: -14, transform: "rotate(8deg)", opacity: 0.9 }} />
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
             <div><b style={{ fontSize: 14, color: "var(--ink)" }} className="num">AED {whole(p.amount)}</b><span style={{ fontSize: 13, color: "var(--mintt)" }}> when {p.gateName} is done</span>{p.note ? <div className="small" style={{ color: "var(--mintt)" }}>"{p.note}"</div> : null}<div className="small" style={{ color: "var(--mintt)" }}>by {p.madeBy}</div></div>
             <button type="button" className="link" style={{ color: "var(--mintt)" }} disabled={busy} onClick={() => onCancel(p.id)}>Cancel</button>
@@ -315,6 +318,26 @@ function Limits({ view, childName, busy, onTopUp, onSetAllowance, onClearAllowan
         </div>
       ) : null}
       {view.account ? <AddMoney childName={childName} busy={busy} onSend={onTopUp} /> : null}
+    </div>
+  );
+}
+
+/** The card at the bank. One tap freezes everything; one tap brings it back. */
+function CardControl({ view, childName, busy, onSet }: { view: CapabilitiesView; childName: string; busy: boolean; onSet: (frozen: boolean) => void }) {
+  const card = view.card ?? null;
+  if (!card) return null;
+  return (
+    <div className="card" style={{ position: "relative", overflow: "hidden" }}>
+      <img className="hero-art" src="/money/card.webp" alt="" style={{ width: 120, right: -18, top: 14, borderRadius: 8, transform: "rotate(10deg)", filter: card.frozen ? "grayscale(1) opacity(.6)" : "drop-shadow(0 8px 12px rgba(20,83,163,.22))" }} />
+      <div style={{ position: "relative", zIndex: 1, paddingRight: 100 }}>
+        <div className="title">{card.frozen ? "Card frozen" : "The card"}</div>
+        <div className="small">{card.frozen ? `Nothing works until you unfreeze it. ${childName} sees it as frozen too.` : `Lost or left somewhere? Freeze it at the bank in one tap. Unfreeze when it turns up.`}</div>
+        <div className="actions">
+          {card.frozen
+            ? <button className="btn small" disabled={busy} onClick={() => onSet(false)}>Unfreeze card</button>
+            : <button className="btn red small" disabled={busy} onClick={() => onSet(true)}>Freeze card</button>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -406,6 +429,7 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
   const clearAllowance = () => run("allowance", async () => { await api.clearAllowance(childId); return "Pocket money stopped"; });
   const makePledge = (capability: string, amount: number, note: string) => run("pledge", async () => { const r = await api.pledge(childId, capability, amount, note || undefined); return `Pledged AED ${whole(r.pledge.amount)} for ${r.pledge.gateName}`; });
   const cancelPledge = (id: string) => run("pledge", async () => { await api.cancelPledge(childId, id); return "Pledge cancelled"; });
+  const setFrozen = (frozen: boolean) => run("card", async () => { await api.setFrozen(childId, frozen); return frozen ? "Card frozen at the bank" : "Card unfrozen"; });
 
   const asks = view?.capabilities.filter((c) => c.state === "Requested") ?? [];
   const moneyAsks = view?.requests ?? [];
@@ -433,6 +457,7 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
             <div className="says"><img src="/family/frank.webp" alt="" /><div className="bubble"><div className="label">Frank, to {childName}</div><p>Every lesson in a strand gets you closer to the next unlock. Your parents say yes, the bank switches it on.</p></div></div>
           </div>
           <aside className="rail">
+            <CardControl view={view} childName={childName} busy={busy === "card"} onSet={(f) => void setFrozen(f)} />
             <Limits view={view} childName={childName} busy={busy === "top-up" || busy === "allowance"} onTopUp={(a, d) => void topUp(a, d)} onSetAllowance={(a, d) => void setAllowance(a, d)} onClearAllowance={() => void clearAllowance()} />
             <Pledges view={view} childName={childName} busy={busy === "pledge"} onPledge={(c, a, n) => void makePledge(c, a, n)} onCancel={(id) => void cancelPledge(id)} />
             <section id="moves">{view.account ? <Recent acct={view.account} /> : null}</section>
