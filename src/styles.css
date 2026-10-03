@@ -115,7 +115,8 @@ input.limit { font: inherit; font-weight: 700; width: 120px; min-height: 44px; b
 @media (min-width: 768px) { .card-hero { padding: 8px 16px 16px; } }
 .card-hero img { display: block; width: 100%; border-radius: 18px; }
 .card-hero img.frozen { filter: grayscale(1) opacity(.55); }
-.money-card { position: relative; border-radius: 18px; transform-style: preserve-3d; transition: transform 480ms cubic-bezier(.2,.8,.2,1); filter: drop-shadow(0 24px 26px rgba(20,83,163,.28)); will-change: transform; }
+.money-card { position: relative; border-radius: 18px; transform-style: preserve-3d; transition: transform 480ms cubic-bezier(.2,.8,.2,1); will-change: transform; }
+.money-card > img { box-shadow: 0 24px 26px rgba(20,83,163,.28); }
 .money-card.is-on { transition: transform 80ms linear; }
 .money-sheen { position: absolute; inset: 0; border-radius: 18px; pointer-events: none; opacity: 0; transition: opacity 320ms; mix-blend-mode: screen; background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), rgba(255,255,255,.46) 0%, rgba(255,255,255,.14) 24%, transparent 58%); }
 .money-card.is-on .money-sheen { opacity: 1; }
