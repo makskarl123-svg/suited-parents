@@ -10,8 +10,8 @@ const API_BASE: string = (import.meta.env["VITE_MONEY_API_URL"] as string | unde
 
 const SECTIONS: { id: string; label: string; sprite: string }[] = [
   { id: "overview", label: "Overview", sprite: "/sprites/item-coin.webp" },
-  { id: "switches", label: "Every switch", sprite: "/sprites/item-bus.webp" },
-  { id: "moves", label: "Money moves", sprite: "/sprites/item-cart.webp" },
+  { id: "switches", label: "Every switch", sprite: "/money/art/metro.webp" },
+  { id: "moves", label: "Money moves", sprite: "/money/art/bag.webp" },
   { id: "history", label: "History", sprite: "/sprites/item-book.webp" },
 ];
 
@@ -96,7 +96,7 @@ function Home({ identity, signOut, mode, guardianLabel }: { identity: ReturnType
         {!error && children !== null && children.length === 0 ? (
           <div className="shell">
             {header}
-            <div className="eyebrow">Signed in as {guardianLabel}</div>
+            <div className="lbl">Signed in as {guardianLabel}</div>
             <h1>No children <em>linked yet.</em></h1>
             <p className="sub">When your child's school enrols them in Suited Money and you give consent, they appear here. Nothing to do for now.</p>
           </div>
@@ -104,7 +104,7 @@ function Home({ identity, signOut, mode, guardianLabel }: { identity: ReturnType
         {!error && children !== null && children.length > 1 && !current ? (
           <div className="shell">
             {header}
-            <div className="eyebrow">Your children</div>
+            <div className="lbl">Your children</div>
             <h1>Who are we <em>looking at?</em></h1>
             <div className="pick">
               {children.map((c) => (

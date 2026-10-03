@@ -7,10 +7,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, type AccountView, type CapabilitiesView, type CapabilityView, type MoneyApi, type Pledge, type TopUpRequest, type Transaction, type Verb } from "../api";
 
-const NAMES: Record<string, string> = { shops: "Shops", online: "Online payments", transport: "Transport", cash_out: "Cash out", peer_transfer: "Sending to friends", ceiling: "Weekly limit" };
-const SPRITES: Record<string, string> = { shops: "cart", online: "laptop", transport: "bus", cash_out: "bank", peer_transfer: "gift", ceiling: "coin" };
+const NAMES: Record<string, string> = { shops: "Shops", online: "Online", transport: "Transport", cash_out: "Cash out", peer_transfer: "Friends", ceiling: "Weekly limit" };
+/** One illustrated object per capability (public/money/art). Sprites stand in until the matched objects are generated. */
+const ART: Record<string, string> = { shops: "/money/art/bag.webp", online: "/money/art/phone-tap.webp", transport: "/money/art/metro.webp", cash_out: "/sprites/item-bank.webp", peer_transfer: "/sprites/item-plane.webp", ceiling: "/sprites/item-coin.webp" };
+const ART_GIFT = "/sprites/item-gift.webp";
 const nameOf = (c: CapabilityView): string => NAMES[c.capability] ?? c.gateName;
-const spriteOf = (id: string): string => SPRITES[id] ?? "coin";
+const artOf = (id: string): string => ART[id] ?? "/sprites/item-coin.webp";
+const artForTx = (t: Transaction): string => t.amount > 0 ? ART_GIFT : artOf(t.control === "transit_mcc" ? "transport" : t.control === "ecommerce" ? "online" : t.control === "atm" ? "cash_out" : t.control === "p2p" ? "peer_transfer" : "shops");
 const isOn = (c: CapabilityView): boolean => c.state === "Active" || c.state === "ActiveByParent" || (c.capability === "shops" && c.state === "Earned") || (c.capability === "ceiling" && c.state === "Earned");
 const isCeiling = (c: CapabilityView): boolean => c.capability === "ceiling";
 const whole = (n: number): string => Math.floor(Math.abs(n)).toLocaleString("en-US");
@@ -40,41 +43,59 @@ function stateFor(c: CapabilityView): { text: string; pill: string } {
 const Money = ({ amount, currency, size = 44 }: { amount: number; currency: string; size?: number }) => (
   <div className="money num" style={{ fontSize: size }}><span className="cur">{currency}</span><span>{whole(amount)}</span><span className="f">.{fils(amount)}</span></div>
 );
-const Sprite = ({ name, size = 24 }: { name: string; size?: number }) => <img src={`/sprites/item-${name}.webp`} alt="" style={{ width: size, height: size, objectFit: "contain" }} />;
+const Obj = ({ src, size = 44, dim = false, style }: { src: string; size?: number; dim?: boolean; style?: React.CSSProperties }) => <img className={`obj${dim ? " dim" : ""}`} src={src} alt="" style={{ width: size, height: size, ...style }} />;
+const Lock = () => <span className="badge" aria-hidden="true"><svg width="18" height="20" viewBox="0 0 22 24"><rect x="2" y="10" width="18" height="13" rx="4" fill="var(--navy)" /><path d="M6 10V7a5 5 0 0 1 10 0v3" fill="none" stroke="var(--bee)" strokeWidth="3.2" strokeLinecap="round" /><circle cx="11" cy="16.5" r="2" fill="var(--bee)" /></svg></span>;
 
 /* ─── Blocks ────────────────────────────────────────────────────────── */
 
-function Hero({ name, view }: { name: string; view: CapabilitiesView }) {
+/** The balance, big. The one number a parent checks. */
+function BalanceHead({ name, view }: { name: string; view: CapabilitiesView }) {
   const acct = view.account ?? null;
-  const caps = view.capabilities.filter((c) => !isCeiling(c));
-  const frozen = view.card?.frozen === true;
+  const left = acct && acct.week.limit !== undefined ? Math.max(0, acct.week.limit - acct.week.spent) : undefined;
   return (
-    <div className={`block ${frozen ? "rose" : "sky"}`}>
-      {frozen ? <div className="pill rose" style={{ marginBottom: 10 }}>Card frozen at the bank</div> : null}
-      <div className="hero-text">
-        <div className="label">{name}'s money</div>
-        {acct ? <Money amount={acct.balance} currency={acct.currency} /> : <div className="big" style={{ marginTop: 8 }}>Card on its way</div>}
-        <p className="meta tint" style={{ marginTop: 8 }}>{acct ? "Held at the bank. You see every payment here." : "The bank is getting the card ready."}</p>
-        <div className="chips" style={{ marginTop: 16 }}>
-          {caps.map((c) => isOn(c) ? <span key={c.capability} className="chip on"><i />{nameOf(c)}</span> : <span key={c.capability} className="chip ice"><i />{nameOf(c)}</span>)}
-        </div>
+    <div className="balance">
+      <div style={{ minWidth: 0 }}>
+        <div className="lbl">{name}'s card · at the bank</div>
+        {acct ? <Money amount={acct.balance} currency={acct.currency} /> : <div className="big din" style={{ marginTop: 8, fontSize: 28 }}>Card on its way</div>}
       </div>
-      <img className="hero-art hero-card" src="/money/card.webp" alt="" />
+      {acct && left !== undefined ? <div className="week num">{acct.currency} {whole(left)} left this week</div> : null}
     </div>
   );
 }
 
-function Stats({ view }: { view: CapabilitiesView }) {
-  const acct = view.account ?? null;
+/** The card as an object, the same one the child sees. */
+function CardHero({ frozen }: { frozen: boolean }) {
+  return <div className="card-hero"><img src="/money/card.webp" alt="The card" className={frozen ? "frozen" : undefined} /></div>;
+}
+
+type PowerState = "on" | "next" | "waiting" | "locked" | "off";
+const powerState = (c: CapabilityView, next: CapabilityView | undefined): PowerState =>
+  isOn(c) ? "on" : c.state === "Closed" || c.state === "Held" ? "off" : c.state === "Requested" || c.state === "Earned" ? "waiting" : next?.capability === c.capability ? "next" : "locked";
+const powerLine = (c: CapabilityView, st: PowerState): string => {
+  if (st === "on") return "On";
+  if (st === "off") return c.state === "Held" ? "Paused" : "Off";
+  if (st === "waiting") return "Your call";
+  const p = c.progress;
+  if (st === "next" && p && p.total > 0) { const left = Math.max(0, p.total - p.done); return left === 1 ? "1 lesson away" : `${left} lessons away`; }
+  return c.gateName.length <= 14 ? c.gateName : "Locked";
+};
+
+/** The five powers as badges under the card. Tapping one scrolls to its switch. */
+function Powers({ view }: { view: CapabilitiesView }) {
   const caps = view.capabilities.filter((c) => !isCeiling(c));
-  const on = caps.filter(isOn).length;
-  const asks = caps.filter((c) => c.state === "Requested").length;
-  const left = acct && acct.week.limit !== undefined ? Math.max(0, acct.week.limit - acct.week.spent) : undefined;
+  const next = caps.find((c) => c.state === "Locked");
   return (
-    <div className="stats">
-      <div className="stat block mint"><img className="hero-art" src="/sprites/item-coin.webp" alt="" style={{ width: 60, right: -6, top: -4 }} /><div className="label">This week</div><div className="v num">{acct && left !== undefined ? `${acct.currency} ${whole(left)}` : "No limit"}</div><div className="small tint" style={{ marginTop: 6 }}>{acct && acct.week.limit !== undefined ? `of ${acct.week.limit} left` : "Set with the bank"}</div></div>
-      <div className="stat block sun"><img className="hero-art" src="/sprites/item-crown.webp" alt="" style={{ width: 60, right: -6, top: -4 }} /><div className="label">Your call</div><div className="v num">{asks}</div><div className="small tint" style={{ marginTop: 6 }}>{asks === 1 ? "earned, waiting" : "earned, waiting"}</div></div>
-      <div className="stat block sky"><img className="hero-art" src="/sprites/item-bus.webp" alt="" style={{ width: 60, right: -6, top: -4 }} /><div className="label">Unlocked</div><div className="v num">{on} of {caps.length}</div><div className="small tint" style={{ marginTop: 6 }}>earned by learning</div></div>
+    <div className="powers" style={{ gridTemplateColumns: `repeat(${caps.length}, minmax(0, 1fr))` }}>
+      {caps.map((c) => {
+        const st = powerState(c, next);
+        return (
+          <button type="button" key={c.capability} className="power" onClick={() => document.getElementById("switches")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+            <span className={`disc ${st}`}><Obj src={artOf(c.capability)} dim={st === "locked"} />{st === "locked" ? <Lock /> : null}</span>
+            <b>{nameOf(c)}</b>
+            <small className={st}>{powerLine(c, st)}</small>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -85,9 +106,9 @@ function Ask({ c, busy, onAct }: { c: CapabilityView; busy: boolean; onAct: (ver
   const limitArg = c.capability === "cash_out" && limit !== "" && Number.isFinite(n) && n >= 0 ? n : undefined;
   return (
     <div className="block sun">
-      <img className="hero-art" src={`/sprites/item-${spriteOf(c.capability)}.webp`} alt="" style={{ width: 130, right: -10, top: -8, transform: "rotate(-8deg)" }} />
-      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-        <div style={{ flex: 1, minWidth: 0, paddingRight: 110, position: "relative", zIndex: 1 }}>
+      <div className="obj-row" style={{ alignItems: "flex-start" }}>
+        <Obj src={artOf(c.capability)} size={96} />
+        <div className="words">
           <div className="label">Earned · your call</div>
           <div className="big" style={{ marginTop: 4 }}>{nameOf(c)}</div>
           <p className="meta tint">{c.gateName} is finished. Say yes and the bank switches it on. Say not yet and nothing changes; the badge stays earned.</p>
@@ -109,9 +130,9 @@ function MoneyAsk({ r, childName, busy, onDecide }: { r: TopUpRequest; childName
   const ok = amount !== "" && Number.isFinite(n) && n > 0;
   return (
     <div className="block sun">
-      <img className="hero-art" src="/sprites/item-moneybag.webp" alt="" style={{ width: 130, right: -10, top: -8, transform: "rotate(8deg)" }} />
-      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-        <div style={{ flex: 1, minWidth: 0, paddingRight: 110, position: "relative", zIndex: 1 }}>
+      <div className="obj-row" style={{ alignItems: "flex-start" }}>
+        <Obj src={ART_GIFT} size={96} />
+        <div className="words">
           <div className="label">{childName} asked · {dayLabel(r.at)}</div>
           <div className="big" style={{ marginTop: 4 }}>"{r.note}"</div>
           <p className="meta tint">{r.amount !== undefined ? `${childName} suggested ${r.currency} ${whole(r.amount)}. ` : `${childName} left the amount to you. `}Yes moves it from your account through the bank. Not now changes nothing.</p>
@@ -163,7 +184,7 @@ function Switches({ view, busy, onAct }: { view: CapabilitiesView; busy: string 
           const on = isOn(c);
           return (
             <div key={c.capability} className="line" style={{ alignItems: "flex-start" }}>
-              <span className={`ic ${on ? "mint" : c.state === "Requested" ? "sun" : ""}`}><Sprite name={spriteOf(c.capability)} /></span>
+              <span className="ic"><Obj src={artOf(c.capability)} dim={!on && c.state === "Locked"} /></span>
               <div className="body">
                 <b>{nameOf(c)}</b>
                 <small>{c.gateName}{c.state === "Locked" && c.progress ? ` · ${c.progress.done} of ${c.progress.total}${c.progress.missing[0] ? ` · ${c.progress.missing[0]}` : ""}` : c.limit ? ` · ${c.limit.currency} ${c.limit.perWeek} a week` : ""}{c.lastActor && c.lastActor !== "system" ? ` · by ${c.lastActor}` : ""}</small>
@@ -185,7 +206,6 @@ function Switches({ view, busy, onAct }: { view: CapabilitiesView; busy: string 
 }
 
 function Recent({ acct }: { acct: AccountView }) {
-  const sprite = (t: Transaction): string => t.amount > 0 ? "moneybag" : t.control === "transit_mcc" ? "bus" : t.control === "ecommerce" ? "laptop" : t.control === "atm" ? "bank" : t.control === "p2p" ? "gift" : "cart";
   return (
     <div>
       <div className="title">Recent money moves</div>
@@ -193,7 +213,7 @@ function Recent({ acct }: { acct: AccountView }) {
       <div className="card flush" style={{ marginTop: 12 }}>
         {acct.transactions.slice(0, 6).map((t) => (
           <div key={t.id} className="line">
-            <span className={`ic ${t.amount > 0 ? "mint" : ""}`}><Sprite name={sprite(t)} /></span>
+            <span className="ic"><Obj src={artForTx(t)} /></span>
             <div className="body"><b>{t.description}</b><small>{dayLabel(t.at)}</small></div>
             <span className={`amt num ${t.amount > 0 ? "in" : ""}`}>{t.amount > 0 ? "+" : "-"}{whole(t.amount)}.{fils(t.amount)}</span>
           </div>
@@ -264,9 +284,9 @@ function Pledges({ view, childName, busy, onPledge, onCancel }: { view: Capabili
       <div className="title">Pledges</div>
       <div className="small">A promise {childName} can see. The bank keeps it the moment the strand is done.</div>
       {open.map((p) => (
-        <div key={p.id} style={{ marginTop: 12, padding: "12px 14px", borderRadius: 16, background: "var(--mint)", position: "relative", overflow: "hidden" }}>
-          <img className="hero-art" src="/sprites/item-moneybag.webp" alt="" style={{ width: 72, right: -8, bottom: -14, transform: "rotate(8deg)", opacity: 0.9 }} />
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+        <div key={p.id} className="obj-row" style={{ marginTop: 12, padding: "12px 14px", borderRadius: 16, background: "var(--mint)", boxShadow: "0 3px 0 var(--minte)" }}>
+          <Obj src={ART_GIFT} size={48} />
+          <div className="words" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
             <div><b style={{ fontSize: 14, color: "var(--ink)" }} className="num">AED {whole(p.amount)}</b><span style={{ fontSize: 13, color: "var(--mintt)" }}> when {p.gateName} is done</span>{p.note ? <div className="small" style={{ color: "var(--mintt)" }}>"{p.note}"</div> : null}<div className="small" style={{ color: "var(--mintt)" }}>by {p.madeBy}</div></div>
             <button type="button" className="link" style={{ color: "var(--mintt)" }} disabled={busy} onClick={() => onCancel(p.id)}>Cancel</button>
           </div>
@@ -327,9 +347,8 @@ function CardControl({ view, childName, busy, onSet }: { view: CapabilitiesView;
   const card = view.card ?? null;
   if (!card) return null;
   return (
-    <div className="card" style={{ position: "relative", overflow: "hidden" }}>
-      <img className="hero-art" src="/money/card.webp" alt="" style={{ width: 120, right: -18, top: 14, borderRadius: 8, transform: "rotate(10deg)", filter: card.frozen ? "grayscale(1) opacity(.6)" : "drop-shadow(0 8px 12px rgba(20,83,163,.22))" }} />
-      <div style={{ position: "relative", zIndex: 1, paddingRight: 100 }}>
+    <div className={card.frozen ? "block ice" : "card"}>
+      <div>
         <div className="title">{card.frozen ? "Card frozen" : "The card"}</div>
         <div className="small">{card.frozen ? `Nothing works until you unfreeze it. ${childName} sees it as frozen too.` : `Lost or left somewhere? Freeze it at the bank in one tap. Unfreeze when it turns up.`}</div>
         <div className="actions">
@@ -462,7 +481,7 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
     <div className="shell">
       <div className="top"><span className="wm"><img src="/suited-logo.svg" alt="Suited" /><b>Money</b></span><span className="who">For parents</span></div>
       <section id="overview">
-      <div className="eyebrow">{childName}{grade ? ` · Grade ${grade}` : ""}</div>
+      <div className="lbl">{childName}{grade ? ` · Grade ${grade}` : ""}</div>
       <h1>{totalAsks > 0 ? <>{totalAsks === 1 ? "One thing" : `${totalAsks} things`} <em>waiting.</em> Your call.</> : <>Everything in <em>your</em> hands.</>}</h1>
       <p className="sub">{childName} earns a capability by finishing the strand that teaches it. Nothing changes on the card until you say so, and you can switch anything off at any time.</p>
       {error ? <div className="err">{error}</div> : null}
@@ -473,8 +492,9 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
           <div className="col">
             {asks.map((c) => <Ask key={c.capability} c={c} busy={busy === c.capability} onAct={(verb, limit) => void act(c.capability, verb, limit)} />)}
             {moneyAsks.map((r) => <MoneyAsk key={r.id} r={r} childName={childName} busy={busy === r.id} onDecide={(approve, amount) => void decide(r, approve, amount)} />)}
-            <Hero name={childName} view={view} />
-            <Stats view={view} />
+            <BalanceHead name={childName} view={view} />
+            <CardHero frozen={view.card?.frozen === true} />
+            <Powers view={view} />
             <section id="switches"><Switches view={view} busy={busy} onAct={(cap, verb, limit) => void act(cap, verb, limit)} /></section>
             <div className="says"><img src="/family/frank.webp" alt="" /><div className="bubble"><div className="label">Frank, to {childName}</div><p>Every lesson in a strand gets you closer to the next unlock. Your parents say yes, the bank switches it on.</p></div></div>
           </div>
