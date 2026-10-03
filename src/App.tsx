@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiError, MoneyApi, type ChildSummary } from "./api";
 import { AuthProvider, useIdentity } from "./auth";
 import { ChildPage } from "./pages/Child";
+import { InvitePage } from "./pages/Invite";
 
 // In development the Vite proxy maps /api → the Money sandbox. In production
 // the app is told where the service lives.
@@ -44,8 +45,20 @@ function Side({ children, picked, onPick, active, onSection, guardianLabel, mode
   );
 }
 
+/** The one deep link the app has: /invite/<token>. Everything else is the overview. */
+function inviteToken(): string | null {
+  const m = /^\/invite\/([^/]+)\/?$/.exec(window.location.pathname);
+  return m?.[1] ? decodeURIComponent(m[1]) : null;
+}
+
 function Inner() {
   const { identity, signOut, mode, guardianLabel } = useIdentity();
+  const [invite, setInvite] = useState<string | null>(() => inviteToken());
+  if (invite) return <InvitePage token={invite} onLinked={() => { window.history.replaceState(null, "", "/"); setInvite(null); }} />;
+  return <Home identity={identity} signOut={signOut} mode={mode} guardianLabel={guardianLabel} />;
+}
+
+function Home({ identity, signOut, mode, guardianLabel }: { identity: ReturnType<typeof useIdentity>["identity"]; signOut?: () => void; mode: "clerk" | "dev"; guardianLabel: string }) {
   const api = useMemo(() => new MoneyApi(API_BASE, identity), [identity]);
   const [children, setChildren] = useState<ChildSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);

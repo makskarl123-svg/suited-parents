@@ -342,6 +342,27 @@ function CardControl({ view, childName, busy, onSet }: { view: CapabilitiesView;
   );
 }
 
+/** Educational consent, with the door to withdraw it. Rare, so quiet; but it must always be one tap away. */
+function ConsentCard({ view, childName, busy, onSet }: { view: CapabilitiesView; childName: string; busy: boolean; onSet: (give: boolean) => void }) {
+  const c = view.consent ?? null;
+  const withdrawn = c?.withdrawnAt != null;
+  const [confirm, setConfirm] = useState(false);
+  return (
+    <div className={withdrawn ? "block rose" : "card"}>
+      <div className="title">{withdrawn ? "Consent withdrawn" : "Your consent"}</div>
+      <div className="small" style={withdrawn ? { color: "var(--roset)" } : undefined}>{withdrawn ? `Learning no longer changes ${childName}'s card. The card is on the bank's defaults. Earned badges are kept.` : c ? `Given ${dayLabel(c.givenAt)} by ${c.byGuardianId}. ${childName}'s learning may request card capabilities that you approve.` : `${childName} was linked before consent was recorded here. The bank's own agreement is separate.`}</div>
+      {!withdrawn && !confirm ? <div className="actions"><button type="button" className="link" style={{ color: "var(--cardinald)" }} onClick={() => { setConfirm(true); }}>Withdraw consent</button></div> : null}
+      {!withdrawn && confirm ? (
+        <div style={{ marginTop: 12, padding: 12, borderRadius: 14, background: "var(--rose)" }}>
+          <div style={{ fontSize: 13.5, color: "var(--roset)", fontWeight: 600 }}>Every capability goes back to the bank's defaults and learning stops changing the card. You can give consent again any time.</div>
+          <div className="actions"><button className="btn red small" disabled={busy} onClick={() => { onSet(false); setConfirm(false); }}>Yes, withdraw</button><button className="btn ghost small" onClick={() => { setConfirm(false); }}>Keep it</button></div>
+        </div>
+      ) : null}
+      {withdrawn ? <div className="actions"><button className="btn small" disabled={busy} onClick={() => onSet(true)}>Give consent again</button></div> : null}
+    </div>
+  );
+}
+
 function History({ api, childId, tick }: { api: MoneyApi; childId: string; tick: number }) {
   const [open, setOpen] = useState(false);
   const [audit, setAudit] = useState<{ at: string; what: string }[]>([]);
@@ -430,6 +451,7 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
   const makePledge = (capability: string, amount: number, note: string) => run("pledge", async () => { const r = await api.pledge(childId, capability, amount, note || undefined); return `Pledged AED ${whole(r.pledge.amount)} for ${r.pledge.gateName}`; });
   const cancelPledge = (id: string) => run("pledge", async () => { await api.cancelPledge(childId, id); return "Pledge cancelled"; });
   const setFrozen = (frozen: boolean) => run("card", async () => { await api.setFrozen(childId, frozen); return frozen ? "Card frozen at the bank" : "Card unfrozen"; });
+  const setConsent = (give: boolean) => run("consent", async () => { await api.setConsent(childId, give); return give ? "Consent given again" : "Consent withdrawn"; });
 
   const asks = view?.capabilities.filter((c) => c.state === "Requested") ?? [];
   const moneyAsks = view?.requests ?? [];
@@ -461,6 +483,7 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
             <Limits view={view} childName={childName} busy={busy === "top-up" || busy === "allowance"} onTopUp={(a, d) => void topUp(a, d)} onSetAllowance={(a, d) => void setAllowance(a, d)} onClearAllowance={() => void clearAllowance()} />
             <Pledges view={view} childName={childName} busy={busy === "pledge"} onPledge={(c, a, n) => void makePledge(c, a, n)} onCancel={(id) => void cancelPledge(id)} />
             <section id="moves">{view.account ? <Recent acct={view.account} /> : null}</section>
+            <ConsentCard view={view} childName={childName} busy={busy === "consent"} onSet={(g) => void setConsent(g)} />
             <section id="history"><History api={api} childId={childId} tick={tick} /></section>
           </aside>
         </div>

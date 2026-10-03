@@ -9,7 +9,11 @@ export default defineConfig({
   server: {
     port: 5180,
     host: true,
-    proxy: { "/api": { target: process.env["MONEY_API_URL"] ?? "http://localhost:3100", changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, "") } },
+    proxy: {
+      "/api": { target: process.env["MONEY_API_URL"] ?? "http://localhost:3100", changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, "") },
+      // The invite link resolves and accepts against the learning API (it knows who the child is).
+      "/learning": { target: process.env["LEARNING_API_URL"] ?? "http://localhost:3001", changeOrigin: true, rewrite: (p) => p.replace(/^\/learning/, "/api") },
+    },
   },
   test: { environment: "jsdom", globals: false },
 });

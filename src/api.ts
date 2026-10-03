@@ -28,7 +28,7 @@ export interface TopUpRequest { id: string; childId: string; amount?: number; cu
 export interface Allowance { amount: number; currency: string; dayOfWeek: number; description: string; setBy: string; lastPaidOn?: string | null; next: { on: string; daysUntil: number } }
 export interface Pledge { id: string; childId: string; capability: string; gateName: string; amount: number; currency: string; note: string; madeBy: string; madeAt: string; status: "open" | "paid" | "cancelled"; paidAt?: string; bankRef?: string }
 
-export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[]; account?: AccountView | null; requests?: TopUpRequest[]; allowance?: Allowance | null; pledges?: Pledge[]; card?: { frozen: boolean } | null }
+export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[]; account?: AccountView | null; requests?: TopUpRequest[]; allowance?: Allowance | null; pledges?: Pledge[]; card?: { frozen: boolean } | null; consent?: { givenAt: string; byGuardianId: string; withdrawnAt: string | null } | null }
 export interface Snapshot { capability: string; state: CapabilityState; label: string; earnedAt: string | null; limit: Limit | null }
 export interface AuditEntry { at: string; childId: string; capability?: string; what: string; requestId?: string; actor?: string }
 
@@ -98,6 +98,11 @@ export class MoneyApi {
   /** Freeze or unfreeze the card at the bank. */
   setFrozen(childId: string, frozen: boolean): Promise<{ card: { frozen: boolean } }> {
     return this.call(`/children/${encodeURIComponent(childId)}/card/${frozen ? "freeze" : "unfreeze"}`, { method: "POST", body: "{}" });
+  }
+
+  /** Withdraw or restore educational consent. Withdrawn: controls to the bank's defaults, learning stops changing the card. */
+  setConsent(childId: string, give: boolean): Promise<{ consent: { givenAt: string; byGuardianId: string; withdrawnAt?: string } | null }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/consent/${give ? "restore" : "withdraw"}`, { method: "POST", body: "{}" });
   }
 
   audit(childId: string): Promise<{ childId: string; entries: AuditEntry[] }> {
