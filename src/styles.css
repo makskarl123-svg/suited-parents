@@ -137,3 +137,4 @@ input.limit { font: inherit; font-weight: 700; width: 120px; min-height: 44px; b
 .side .foot-side b { color: var(--eel); display: block; font-size: 13px; }
 .main { flex: 1; min-width: 0; }
 section[id] { scroll-margin-top: 20px; }
+@media (min-width: 1024px) { .main .top .wm { visibility: hidden; } }
