@@ -374,6 +374,64 @@ function Limits({ view, childName }: { view: CapabilitiesView; childName: string
   );
 }
 
+/** The 18 Fund: a long-term pot for the child, held by the bank on its terms. See it, add to it. Never a word about what it will be worth. */
+function Fund({ view, childName, busy, onAdd }: { view: CapabilitiesView; childName: string; busy: boolean; onAdd: (amount: number) => void }) {
+  const f = view.fund ?? null;
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState("100");
+  const n = Number(amount);
+  const ok = amount !== "" && Number.isFinite(n) && n > 0;
+  return (
+    <div className="card obj-row" style={{ alignItems: "flex-start" }}>
+      <Obj src="/money/art/vault.webp" size={64} />
+      <div className="words">
+        <div className="title">The 18 Fund</div>
+        <div className="small">A high-yield savings account at the bank for {childName} at 18, on the bank's terms. {childName} can see it and cannot touch it.</div>
+        <div className="money" style={{ fontSize: 30 }}><span className="cur">{f?.currency ?? "AED"}</span>{whole(f?.balance ?? 0)}</div>
+        {f && f.contributions.length > 0 ? <div className="small" style={{ marginTop: 6 }}>{f.contributions.slice(0, 3).map((c) => `${c.description} · AED ${whole(c.amount)} · ${dayLabel(c.at)}`).join(" · ")}</div> : null}
+        {!open ? (
+          <div className="actions"><button className="btn small" disabled={busy} onClick={() => { setOpen(true); }}>Add to the fund</button></div>
+        ) : (
+          <div className="sheet">
+            <div className="small">Moves from your account to the fund at the bank. Suited never holds it.</div>
+            <div className="actions" style={{ marginTop: 10 }}>
+              {[50, 100, 250, 500].map((v) => <button type="button" key={v} className={`pill ${amount === String(v) ? "mint" : "grey"}`} style={{ cursor: "pointer", padding: "10px 14px", fontSize: 14 }} onClick={() => { setAmount(String(v)); }}>AED {v}</button>)}
+              <label className="small" style={{ display: "flex", alignItems: "center", gap: 8 }}>AED <input className="limit num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount in AED" style={{ width: 96 }} /></label>
+            </div>
+            <div className="actions">
+              <button className="btn small" disabled={busy || !ok} onClick={() => { onAdd(n); setOpen(false); }}>Add AED {ok ? whole(n) : "…"}</button>
+              <button className="btn ghost small" onClick={() => { setOpen(false); }}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The child's jars, as the bank holds them. A parent sees; the child fills. */
+function Jars({ view, childName }: { view: CapabilitiesView; childName: string }) {
+  const jars = view.jars ?? [];
+  if (jars.length === 0) return null;
+  return (
+    <div className="card">
+      <div className="title">{childName}'s jars</div>
+      <div className="small">Pockets inside the account. {childName} names and fills them from the card.</div>
+      <div style={{ marginTop: 8 }}>
+        {jars.map((j) => {
+          const pct = j.target && j.target > 0 ? Math.min(100, Math.round((j.balance / j.target) * 100)) : null;
+          return (
+            <div key={j.id} className="line">
+              <span className="ic"><Obj src="/money/art/jar-coins.webp" /></span>
+              <div className="body"><b>{j.name}</b><small>{j.target ? `AED ${whole(j.balance)} of ${whole(j.target)}` : `AED ${whole(j.balance)}`}</small>{pct !== null ? <div className="bar" style={{ maxWidth: 200, background: "var(--polar)" }}><i style={{ width: `${pct}%`, background: "var(--fox)" }} /></div> : null}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** Educational consent, with the door to withdraw it. Rare, so quiet; but it must always be one tap away. */
 function ConsentCard({ view, childName, busy, onSet }: { view: CapabilitiesView; childName: string; busy: boolean; onSet: (give: boolean) => void }) {
   const c = view.consent ?? null;
@@ -484,6 +542,7 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
   const cancelPledge = (id: string) => run("pledge", async () => { await api.cancelPledge(childId, id); return "Pledge cancelled"; });
   const setFrozen = (frozen: boolean) => run("card", async () => { await api.setFrozen(childId, frozen); return frozen ? "Card frozen at the bank" : "Card unfrozen"; });
   const setConsent = (give: boolean) => run("consent", async () => { await api.setConsent(childId, give); return give ? "Consent given again" : "Consent withdrawn"; });
+  const addToFund = (amount: number) => run("fund", async () => { const r = await api.contributeFund(childId, amount); return `AED ${whole(r.transaction.amount)} added to ${childName}'s 18 Fund`; });
 
   const asks = view?.capabilities.filter((c) => c.state === "Requested") ?? [];
   const moneyAsks = view?.requests ?? [];
@@ -514,6 +573,8 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
           </div>
           <aside className="rail">
             <GivenThisMonth view={view} childName={childName} />
+            <Fund view={view} childName={childName} busy={busy === "fund"} onAdd={(a) => void addToFund(a)} />
+            <Jars view={view} childName={childName} />
             <Limits view={view} childName={childName} />
             <Pledges view={view} childName={childName} busy={busy === "pledge"} onPledge={(c, a, n) => void makePledge(c, a, n)} onCancel={(id) => void cancelPledge(id)} />
             <section id="moves">{view.account ? <Recent acct={view.account} /> : null}</section>

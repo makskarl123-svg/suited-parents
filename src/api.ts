@@ -22,6 +22,8 @@ export interface CapabilityView {
 
 export interface Transaction { id: string; at: string; amount: number; currency: string; description: string; control?: string }
 /** The bank's view of the account, read by the Money service through its connector. Null until the bank has a card. */
+export interface Jar { id: string; name: string; currency: string; balance: number; target?: number; createdAt: string }
+export interface FundView { currency: string; balance: number; contributions: Transaction[] }
 export interface AccountView { currency: string; balance: number; week: { spent: number; limit?: number; startedOn: string }; transactions: Transaction[] }
 
 /** The child's ask for money. Yes becomes a transfer through the bank; the amount can be changed on the way. */
@@ -30,7 +32,7 @@ export interface TopUpRequest { id: string; childId: string; amount?: number; cu
 export interface Allowance { amount: number; currency: string; dayOfWeek: number; description: string; setBy: string; lastPaidOn?: string | null; next: { on: string; daysUntil: number } }
 export interface Pledge { id: string; childId: string; capability: string; gateName: string; amount: number; currency: string; note: string; madeBy: string; madeAt: string; status: "open" | "paid" | "cancelled"; paidAt?: string; bankRef?: string }
 
-export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[]; account?: AccountView | null; requests?: TopUpRequest[]; allowance?: Allowance | null; pledges?: Pledge[]; card?: { frozen: boolean } | null; consent?: { givenAt: string; byGuardianId: string; withdrawnAt: string | null } | null }
+export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[]; account?: AccountView | null; requests?: TopUpRequest[]; allowance?: Allowance | null; pledges?: Pledge[]; card?: { frozen: boolean } | null; consent?: { givenAt: string; byGuardianId: string; withdrawnAt: string | null } | null; jars?: Jar[]; fund?: FundView | null }
 export interface Snapshot { capability: string; state: CapabilityState; label: string; earnedAt: string | null; limit: Limit | null }
 export interface AuditEntry { at: string; childId: string; capability?: string; what: string; requestId?: string; actor?: string }
 
@@ -105,6 +107,11 @@ export class MoneyApi {
   /** Withdraw or restore educational consent. Withdrawn: controls to the bank's defaults, learning stops changing the card. */
   setConsent(childId: string, give: boolean): Promise<{ consent: { givenAt: string; byGuardianId: string; withdrawnAt?: string } | null }> {
     return this.call(`/children/${encodeURIComponent(childId)}/consent/${give ? "restore" : "withdraw"}`, { method: "POST", body: "{}" });
+  }
+
+  /** Into the 18 Fund, through the bank. */
+  contributeFund(childId: string, amount: number): Promise<{ transaction: Transaction; fund: FundView | null }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/fund/contribute`, { method: "POST", body: JSON.stringify({ amount }) });
   }
 
   audit(childId: string): Promise<{ childId: string; entries: AuditEntry[] }> {
