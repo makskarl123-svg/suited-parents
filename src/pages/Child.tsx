@@ -5,7 +5,7 @@
  * or the engine's; every switch is the parent's.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, type AccountView, type CapabilitiesView, type CapabilityView, type MoneyApi, type Pledge, type TopUpRequest, type Transaction, type Verb } from "../api";
+import { ApiError, type AccountView, type CapabilitiesView, type CapabilityView, type MoneyApi, type Pledge, type PledgeReward, type TopUpRequest, type Transaction, type Verb } from "../api";
 
 const NAMES: Record<string, string> = { shops: "Shops", online: "Online", transport: "Transport", cash_out: "Cash out", peer_transfer: "Friends", ceiling: "Weekly limit" };
 /** One illustrated object per capability (public/money/art). Sprites stand in until the matched objects are generated. */
@@ -54,13 +54,7 @@ function BalanceHead({ name, view }: { name: string; view: CapabilitiesView }) {
   const acct = view.account ?? null;
   const left = acct && acct.week.limit !== undefined ? Math.max(0, acct.week.limit - acct.week.spent) : undefined;
   return (
-    <div className="balance">
-      <div style={{ minWidth: 0 }}>
-        <div className="lbl">{name}'s card · at the bank</div>
-        {acct ? <Money amount={acct.balance} currency={acct.currency} /> : <div className="big din" style={{ marginTop: 8, fontSize: 28 }}>Card on its way</div>}
-      </div>
-      {acct && left !== undefined && left < acct.balance ? <div className="week num" style={{ color: "var(--sunt)" }}>Only {acct.currency} {whole(left)} more this week</div> : null}
-    </div>
+    acct && left !== undefined && left < acct.balance ? <div className="week num" style={{ color: "var(--sunt)" }}>Only {acct.currency} {whole(left)} more this week for {name}</div> : null
   );
 }
 
@@ -293,52 +287,100 @@ function Recent({ acct }: { acct: AccountView }) {
   );
 }
 
-/** Pledges: "AED 50 when Budgeting is done". Kept by the bank the moment the strand completes. */
-function Pledges({ view, childName, busy, onPledge, onCancel }: { view: CapabilitiesView; childName: string; busy: boolean; onPledge: (capability: string, amount: number, note: string) => void; onCancel: (id: string) => void }) {
+/** What a pledge pays, in the parent's words. */
+function rewardLine(p: Pledge, view: CapabilitiesView): string {
+  const r = p.reward ?? { kind: "money", destination: "card" };
+  if (r.kind === "promise") return r.title;
+  const where = r.destination === "fund" ? "into the 18 Fund" : r.destination === "jar" ? `into the ${view.jars?.find((j) => j.id === r.jarId)?.name ?? "jar"} jar` : "onto the card";
+  return `AED ${whole(p.amount)} ${where}`;
+}
+
+/**
+ * Rewards. A parent picks a strand, then what it pays: money through the bank into the card, a jar or the
+ * 18 Fund; or a promise in their own words that they keep with one tap once the strand is done. The child
+ * sees the promise in those words. Suited never shows a brand and never fulfils a promise.
+ */
+function Pledges({ view, childName, busy, onPledge, onCancel, onRelease }: { view: CapabilitiesView; childName: string; busy: boolean; onPledge: (capability: string, amount: number, note: string, reward: PledgeReward) => void; onCancel: (id: string) => void; onRelease: (id: string) => void }) {
   const pledges = view.pledges ?? [];
+  const due = pledges.filter((p) => p.status === "due");
   const open = pledges.filter((p) => p.status === "open");
   const paid: Pledge[] = pledges.filter((p) => p.status === "paid").slice(-3).reverse();
-  const candidates = view.capabilities.filter((c) => !isCeiling(c) && !isOn(c) && c.state === "Locked" && !open.some((p) => p.capability === c.capability));
+  const candidates = view.capabilities.filter((c) => !isCeiling(c) && !isOn(c) && c.state === "Locked" && !open.some((p) => p.capability === c.capability) && !due.some((p) => p.capability === c.capability));
+  const jars = view.jars ?? [];
   const [adding, setAdding] = useState(false);
   const [cap, setCap] = useState<string>(candidates[0]?.capability ?? "");
+  const [kind, setKind] = useState<"money" | "promise">("money");
+  const [dest, setDest] = useState<"card" | "jar" | "fund">("card");
+  const [jarId, setJarId] = useState<string>(jars[0]?.id ?? "");
   const [amount, setAmount] = useState("50");
+  const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
   const n = Number(amount);
-  const ok = cap !== "" && amount !== "" && Number.isFinite(n) && n > 0;
+  const ok = cap !== "" && (kind === "promise" ? title.trim().length > 0 : amount !== "" && Number.isFinite(n) && n > 0 && (dest !== "jar" || jarId !== ""));
+  const reward: PledgeReward = kind === "promise" ? { kind: "promise", title: title.trim() } : { kind: "money", destination: dest, ...(dest === "jar" ? { jarId } : {}) };
+  const who = (s: string) => s === "mum" ? "Mum" : s === "dad" ? "Dad" : s;
   return (
     <div className="card">
-      <div className="title">Pledges</div>
-      <div className="small">A promise {childName} can see. The bank keeps it the moment the strand is done.</div>
+      <div className="title">Rewards</div>
+      <div className="small">A promise {childName} can see, in your words. Money moves through the bank the moment the strand is done; a promise waits for your tap.</div>
+      {due.map((p) => (
+        <div key={p.id} className="obj-row block sun" style={{ marginTop: 12, padding: "12px 14px" }}>
+          <Obj src="/money/art/trophy.webp" size={48} />
+          <div className="words">
+            <b style={{ fontSize: 14, color: "var(--ink)" }}>{childName} finished {p.gateName}.</b>
+            <div className="small" style={{ color: "var(--sunt)", marginTop: 2 }}>You promised: {rewardLine(p, view)}</div>
+            <div className="actions" style={{ marginTop: 10 }}><button className="btn small" disabled={busy} onClick={() => onRelease(p.id)}>Kept it</button></div>
+          </div>
+        </div>
+      ))}
       {open.map((p) => (
-        <div key={p.id} className="obj-row" style={{ marginTop: 12, padding: "12px 14px", borderRadius: 16, background: "var(--mint)", boxShadow: "0 3px 0 var(--minte)" }}>
-          <Obj src={ART_GIFT} size={48} />
+        <div key={p.id} className="obj-row well" style={{ marginTop: 12, padding: "12px 14px" }}>
+          <Obj src={p.reward?.kind === "promise" ? "/money/art/trophy.webp" : p.reward?.destination === "fund" ? "/money/art/vault.webp" : p.reward?.destination === "jar" ? "/money/art/jar-coins.webp" : ART_GIFT} size={48} />
           <div className="words" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-            <div><b style={{ fontSize: 14, color: "var(--ink)" }} className="num">AED {whole(p.amount)}</b><span style={{ fontSize: 13, color: "var(--mintt)" }}> when {p.gateName} is done</span>{p.note ? <div className="small" style={{ color: "var(--mintt)" }}>"{p.note}"</div> : null}<div className="small" style={{ color: "var(--mintt)" }}>by {p.madeBy}</div></div>
-            <button type="button" className="link" style={{ color: "var(--mintt)" }} disabled={busy} onClick={() => onCancel(p.id)}>Cancel</button>
+            <div><b style={{ fontSize: 14, color: "var(--ink)" }}>{rewardLine(p, view)}</b><div className="small">when {p.gateName} is done{p.madeBy ? ` · by ${who(p.madeBy)}` : ""}</div>{p.note ? <div className="small">"{p.note}"</div> : null}</div>
+            <button type="button" className="link" disabled={busy} onClick={() => onCancel(p.id)}>Cancel</button>
           </div>
         </div>
       ))}
       {paid.map((p) => (
         <div key={p.id} style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 2px" }}>
-          <div><b style={{ fontSize: 13.5, color: "var(--ink)" }}>{p.gateName} done</b><div className="small">Kept{p.paidAt ? ` · ${dayLabel(p.paidAt)}` : ""} · by {p.madeBy}</div></div>
-          <span className="num" style={{ fontWeight: 800, color: "var(--treefrog)" }}>+{whole(p.amount)}.00</span>
+          <div><b style={{ fontSize: 14, color: "var(--ink)" }}>{p.gateName} done</b><div className="small">{p.reward?.kind === "promise" ? "Promise kept" : "Paid by the bank"}{p.paidAt ? ` · ${dayLabel(p.paidAt)}` : ""} · by {who(p.madeBy)}</div></div>
+          <span className="num" style={{ fontWeight: 700, color: "var(--treefrog)" }}>{p.reward?.kind === "promise" ? "Kept" : `+${whole(p.amount)}.00`}</span>
         </div>
       ))}
       {!adding ? (
-        candidates.length > 0 ? <button type="button" className="btn ghost small" style={{ marginTop: 12 }} onClick={() => { setAdding(true); setCap(candidates[0]?.capability ?? ""); }}>Pledge a reward</button> : <div className="small" style={{ marginTop: 10 }}>Every strand is either earned or already pledged.</div>
+        candidates.length > 0 ? <button type="button" className="btn ghost small" style={{ marginTop: 12 }} onClick={() => { setAdding(true); setCap(candidates[0]?.capability ?? ""); }}>New reward</button> : <div className="small" style={{ marginTop: 10 }}>Every strand is either earned or already has a reward.</div>
       ) : (
-        <div style={{ marginTop: 12, padding: 14, borderRadius: 16, background: "var(--polar)" }}>
-          <div className="small" style={{ marginBottom: 8 }}>Pick the strand, then the amount. It moves only when the strand completes.</div>
-          <div className="actions" style={{ marginTop: 0 }}>
-            {candidates.map((c) => <button type="button" key={c.capability} className={`pill ${cap === c.capability ? "mint" : "grey"}`} style={{ cursor: "pointer", padding: "8px 12px", fontSize: 12.5 }} onClick={() => { setCap(c.capability); }}>{c.gateName}</button>)}
+        <div className="sheet">
+          <div className="label">When {childName} finishes</div>
+          <div className="actions" style={{ marginTop: 8 }}>
+            {candidates.map((c) => <button type="button" key={c.capability} className={`pill ${cap === c.capability ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setCap(c.capability); }}>{c.gateName}</button>)}
           </div>
-          <div className="actions">
-            {[20, 50, 100].map((v) => <button type="button" key={v} className={`pill ${amount === String(v) ? "mint" : "grey"}`} style={{ cursor: "pointer", padding: "8px 12px", fontSize: 13 }} onClick={() => { setAmount(String(v)); }}>AED {v}</button>)}
-            <label className="small" style={{ display: "flex", alignItems: "center", gap: 8 }}>AED <input className="limit num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount in AED" style={{ width: 90 }} /></label>
+          <div className="label" style={{ marginTop: 14 }}>{childName} gets</div>
+          <div className="actions" style={{ marginTop: 8 }}>
+            <button type="button" className={`pill ${kind === "money" ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setKind("money"); }}>Money</button>
+            <button type="button" className={`pill ${kind === "promise" ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setKind("promise"); }}>Something you will do together</button>
           </div>
+          {kind === "money" ? (
+            <>
+              <div className="actions" style={{ marginTop: 10 }}>
+                {[20, 50, 100].map((v) => <button type="button" key={v} className={`pill ${amount === String(v) ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setAmount(String(v)); }}>AED {v}</button>)}
+                <label className="small" style={{ display: "flex", alignItems: "center", gap: 8 }}>AED <input className="limit num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount in AED" style={{ width: 90 }} /></label>
+              </div>
+              <div className="label" style={{ marginTop: 14 }}>Into</div>
+              <div className="actions" style={{ marginTop: 8 }}>
+                <button type="button" className={`pill ${dest === "card" ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setDest("card"); }}>The card</button>
+                {jars.map((j) => <button type="button" key={j.id} className={`pill ${dest === "jar" && jarId === j.id ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setDest("jar"); setJarId(j.id); }}>{j.name} jar</button>)}
+                <button type="button" className={`pill ${dest === "fund" ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setDest("fund"); }}>The 18 Fund</button>
+              </div>
+            </>
+          ) : (
+            <input className="limit" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} placeholder="e.g. Aquarium day, or Pizza night, your pick" aria-label="The promise" style={{ width: "100%", marginTop: 10 }} />
+          )}
           <input className="limit" value={note} onChange={(e) => setNote(e.target.value)} maxLength={80} placeholder="A word for the card, e.g. For sticking with it" aria-label="Note" style={{ width: "100%", marginTop: 10 }} />
+          <div className="small" style={{ marginTop: 10 }}>{kind === "promise" ? `${childName} sees your words. When the strand is done you tap Kept it. Nothing moves through the bank.` : "Moves from your account through the bank the moment the strand completes. Suited never holds it."}</div>
           <div className="actions">
-            <button className="btn small" disabled={busy || !ok} onClick={() => { onPledge(cap, n, note.trim()); setAdding(false); setNote(""); }}>Pledge AED {ok ? whole(n) : "…"}</button>
+            <button className="btn small" disabled={busy || !ok} onClick={() => { onPledge(cap, kind === "money" ? n : 0, note.trim(), reward); setAdding(false); setNote(""); setTitle(""); }}>{kind === "promise" ? "Promise it" : `Pledge AED ${ok ? whole(n) : "…"}`}</button>
             <button className="btn ghost small" disabled={busy} onClick={() => { setAdding(false); }}>Cancel</button>
           </div>
         </div>
@@ -538,7 +580,8 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
   };
   const setAllowance = (amount: number, day: number) => run("allowance", async () => { const r = await api.setAllowance(childId, amount, day); return `AED ${whole(r.allowance.amount)} every ${DAYS_LONG[r.allowance.dayOfWeek]}`; });
   const clearAllowance = () => run("allowance", async () => { await api.clearAllowance(childId); return "Pocket money stopped"; });
-  const makePledge = (capability: string, amount: number, note: string) => run("pledge", async () => { const r = await api.pledge(childId, capability, amount, note || undefined); return `Pledged AED ${whole(r.pledge.amount)} for ${r.pledge.gateName}`; });
+  const makePledge = (capability: string, amount: number, note: string, reward: PledgeReward) => run("pledge", async () => { const r = await api.pledge(childId, capability, amount, note || undefined, reward); return reward.kind === "promise" ? `Promised "${reward.title}" for ${r.pledge.gateName}` : `Pledged AED ${whole(r.pledge.amount)} for ${r.pledge.gateName}`; });
+  const releasePledge = (id: string) => run("pledge", async () => { const r = await api.releasePledge(childId, id); return `Kept: ${r.pledge.reward?.kind === "promise" ? r.pledge.reward.title : r.pledge.gateName}`; });
   const cancelPledge = (id: string) => run("pledge", async () => { await api.cancelPledge(childId, id); return "Pledge cancelled"; });
   const setFrozen = (frozen: boolean) => run("card", async () => { await api.setFrozen(childId, frozen); return frozen ? "Card frozen at the bank" : "Card unfrozen"; });
   const setConsent = (give: boolean) => run("consent", async () => { await api.setConsent(childId, give); return give ? "Consent given again" : "Consent withdrawn"; });
@@ -553,9 +596,16 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
     <div className="shell">
       <div className="top"><span className="wm"><img src="/suited-logo.svg" alt="Suited" /><b>Money</b></span><span className="who">For parents</span></div>
       <section id="overview">
-      <div className="lbl">{childName}{grade ? ` · Grade ${grade}` : ""}</div>
-      <h1>{totalAsks > 0 ? <>{totalAsks === 1 ? "One thing" : `${totalAsks} things`} <em>waiting.</em> Your call.</> : <>Everything in <em>your</em> hands.</>}</h1>
-      <p className="sub">{childName} earns a capability by finishing the strand that teaches it. Nothing changes on the card until you say so, and you can switch anything off at any time.</p>
+      <div className="head blue">
+        <div className="head-row">
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="head-lbl">{childName}{grade ? ` · Grade ${grade}` : ""} · on the card at the bank</div>
+            <div className="head-title">{view?.account ? <Money amount={view.account.balance} currency={view.account.currency} /> : "Card on its way"}</div>
+            <div className="head-sub">{totalAsks > 0 ? `${totalAsks === 1 ? "One thing" : `${totalAsks} things`} waiting. Your call.` : `Everything in your hands. ${childName} earns a capability by finishing the strand that teaches it; nothing changes until you say so.`}</div>
+          </div>
+          <Obj src="/money/art/coin-stack.webp" size={96} style={{ filter: "drop-shadow(0 12px 10px rgba(0,0,0,.18))" }} />
+        </div>
+      </div>
       {error ? <div className="err">{error}</div> : null}
       </section>
       {!view && !error ? <div className="card" style={{ marginTop: 20 }}><div className="meta">Loading…</div></div> : null}
@@ -564,8 +614,8 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
           <div className="col">
             {asks.map((c) => <Ask key={c.capability} c={c} busy={busy === c.capability} onAct={(verb, limit) => void act(c.capability, verb, limit)} />)}
             {moneyAsks.map((r) => <MoneyAsk key={r.id} r={r} childName={childName} busy={busy === r.id} onDecide={(approve, amount) => void decide(r, approve, amount)} />)}
-            <BalanceHead name={childName} view={view} />
             <CardHero frozen={view.card?.frozen === true} />
+            <BalanceHead name={childName} view={view} />
             <DoRow view={view} childName={childName} busy={busy} onTopUp={(a, d) => void topUp(a, d)} onSetAllowance={(a, d) => void setAllowance(a, d)} onClearAllowance={() => void clearAllowance()} onFreeze={(f) => void setFrozen(f)} />
             <Powers view={view} />
             <section id="switches"><Switches view={view} busy={busy} onAct={(cap, verb, limit) => void act(cap, verb, limit)} /></section>
@@ -576,7 +626,7 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
             <Fund view={view} childName={childName} busy={busy === "fund"} onAdd={(a) => void addToFund(a)} />
             <Jars view={view} childName={childName} />
             <Limits view={view} childName={childName} />
-            <Pledges view={view} childName={childName} busy={busy === "pledge"} onPledge={(c, a, n) => void makePledge(c, a, n)} onCancel={(id) => void cancelPledge(id)} />
+            <Pledges view={view} childName={childName} busy={busy === "pledge"} onPledge={(c, a, n, r) => void makePledge(c, a, n, r)} onCancel={(id) => void cancelPledge(id)} onRelease={(id) => void releasePledge(id)} />
             <section id="moves">{view.account ? <Recent acct={view.account} /> : null}</section>
             <ConsentCard view={view} childName={childName} busy={busy === "consent"} onSet={(g) => void setConsent(g)} />
             <section id="history"><History api={api} childId={childId} tick={tick} /></section>

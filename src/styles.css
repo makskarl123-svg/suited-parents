@@ -203,3 +203,14 @@ section[id] { scroll-margin-top: 20px; }
 .do-btn:disabled { opacity: .5; }
 .sheet { margin-top: 12px; padding: 16px; border-radius: 12px; background: var(--well); }
 @media (max-width: 420px) { .do { gap: 8px; } .do-btn { padding: 12px; min-height: 100px; } .do-btn b { font-size: 13.5px; } .do-btn small { font-size: 11px; } }
+
+/* ─── Head: one saturated block per screen ─────────────────────────── */
+.head { position: relative; border-radius: 20px; padding: 24px; color: #fff; overflow: hidden; margin-top: 4px; }
+.head.blue { background: #1CB0F6; } .head.purple { background: #B06BFF; } .head.green { background: var(--owl); } .head.orange { background: #FF9600; }
+.head-row { display: flex; align-items: flex-start; gap: 20px; }
+.head .head-lbl { font-size: 12px; line-height: 16px; font-weight: 700; color: rgba(255,255,255,.78); }
+.head .head-title { font-family: "DIN Round", sans-serif; font-weight: 700; font-size: 28px; line-height: 32px; letter-spacing: -0.02em; color: #fff; margin-top: 4px; }
+.head .head-title .money { font-size: 48px; margin-top: 2px; color: #fff; } .head .money .cur, .head .money .f { color: rgba(255,255,255,.72); }
+@media (min-width: 768px) { .head { padding: 28px; } .head .head-title .money { font-size: 64px; } }
+.head .head-sub { font-size: 14px; line-height: 20px; color: rgba(255,255,255,.88); max-width: 46ch; margin-top: 8px; }
+.head .obj { flex: none; }

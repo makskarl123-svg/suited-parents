@@ -30,7 +30,8 @@ export interface AccountView { currency: string; balance: number; week: { spent:
 export interface TopUpRequest { id: string; childId: string; amount?: number; currency: string; note: string; at: string; status: "pending" | "approved" | "declined"; decidedBy?: string; decidedAt?: string; bankRef?: string }
 
 export interface Allowance { amount: number; currency: string; dayOfWeek: number; description: string; setBy: string; lastPaidOn?: string | null; next: { on: string; daysUntil: number } }
-export interface Pledge { id: string; childId: string; capability: string; gateName: string; amount: number; currency: string; note: string; madeBy: string; madeAt: string; status: "open" | "paid" | "cancelled"; paidAt?: string; bankRef?: string }
+export type PledgeReward = { kind: "money"; destination: "card" | "jar" | "fund"; jarId?: string } | { kind: "promise"; title: string };
+export interface Pledge { id: string; childId: string; capability: string; gateName: string; amount: number; currency: string; note: string; reward?: PledgeReward; madeBy: string; madeAt: string; status: "open" | "due" | "paid" | "cancelled"; dueAt?: string; paidAt?: string; bankRef?: string }
 
 export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[]; account?: AccountView | null; requests?: TopUpRequest[]; allowance?: Allowance | null; pledges?: Pledge[]; card?: { frozen: boolean } | null; consent?: { givenAt: string; byGuardianId: string; withdrawnAt: string | null } | null; jars?: Jar[]; fund?: FundView | null }
 export interface Snapshot { capability: string; state: CapabilityState; label: string; earnedAt: string | null; limit: Limit | null }
@@ -91,8 +92,13 @@ export class MoneyApi {
     if (!res.ok) throw new ApiError(res.status, res.statusText);
   }
 
-  pledge(childId: string, capability: string, amount: number, note?: string): Promise<{ pledge: Pledge }> {
-    return this.call(`/children/${encodeURIComponent(childId)}/pledges`, { method: "POST", body: JSON.stringify({ capability, amount, ...(note ? { note } : {}) }) });
+  pledge(childId: string, capability: string, amount: number, note?: string, reward?: PledgeReward): Promise<{ pledge: Pledge }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/pledges`, { method: "POST", body: JSON.stringify({ capability, amount, ...(note ? { note } : {}), ...(reward ? { reward } : {}) }) });
+  }
+
+  /** The parent kept a promise pledge. */
+  releasePledge(childId: string, pledgeId: string): Promise<{ pledge: Pledge }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/pledges/${encodeURIComponent(pledgeId)}/release`, { method: "POST", body: "{}" });
   }
 
   cancelPledge(childId: string, pledgeId: string): Promise<{ pledge: Pledge }> {
