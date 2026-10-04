@@ -478,7 +478,7 @@ function Jars({ view, childName }: { view: CapabilitiesView; childName: string }
           const pct = j.target && j.target > 0 ? Math.min(100, Math.round((j.balance / j.target) * 100)) : null;
           return (
             <div key={j.id} className="line">
-              <span className="ic"><Obj src="/money/art/jar-coins.webp" /></span>
+              <span className="ic"><Obj src={j.icon ? `/sprites/item-${j.icon}.webp` : "/money/art/jar-coins.webp"} /></span>
               <div className="body"><b>{j.name}</b><small>{j.target ? `AED ${whole(j.balance)} of ${whole(j.target)}` : `AED ${whole(j.balance)}`}</small>{pct !== null ? <div className="bar" style={{ maxWidth: 200, background: "var(--polar)" }}><i style={{ width: `${pct}%`, background: "var(--fox)" }} /></div> : null}</div>
             </div>
           );

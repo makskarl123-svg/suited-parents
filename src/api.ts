@@ -22,7 +22,7 @@ export interface CapabilityView {
 
 export interface Transaction { id: string; at: string; amount: number; currency: string; description: string; control?: string }
 /** The bank's view of the account, read by the Money service through its connector. Null until the bank has a card. */
-export interface Jar { id: string; name: string; currency: string; balance: number; target?: number; createdAt: string }
+export interface Jar { id: string; name: string; currency: string; balance: number; target?: number; icon?: string; createdAt: string }
 export interface FundView { currency: string; balance: number; contributions: Transaction[] }
 export interface Decline { id: string; at: string; amount: number; currency: string; description: string; reason: "control_off" | "frozen" | "insufficient" | "over_limit"; control?: string }
 export interface AccountView { currency: string; balance: number; week: { spent: number; limit?: number; startedOn: string }; transactions: Transaction[]; declines?: Decline[] }
