@@ -268,7 +268,7 @@ function Switches({ view, busy, onAct }: { view: CapabilitiesView; busy: string 
   );
 }
 
-function Recent({ acct }: { acct: AccountView }) {
+function Recent({ acct, childName }: { acct: AccountView; childName: string }) {
   return (
     <div>
       <div className="title">Recent money moves</div>
@@ -282,6 +282,20 @@ function Recent({ acct }: { acct: AccountView }) {
           </div>
         ))}
         {acct.transactions.length === 0 ? <div className="line"><div className="body"><small>No payments yet.</small></div></div> : null}
+      </div>
+      {(acct.declines ?? []).length > 0 ? (
+        <div className="card flush" style={{ marginTop: 12 }}>
+          <div className="small" style={{ padding: "12px 0 4px" }}>The card said no. {childName} saw why, and what would earn it.</div>
+          {(acct.declines ?? []).slice(0, 3).map((d) => (
+            <div key={d.id} className="line">
+              <span className="ic"><Obj src={d.control ? artOf(({ pos: "shops", transit_mcc: "transport", ecommerce: "online", atm: "cash_out", p2p: "peer_transfer" } as Record<string, string>)[d.control] ?? "shops") : "/money/art/coin-stack.webp"} dim /></span>
+              <div className="body"><b>{d.description}</b><small>{dayLabel(d.at)} · {d.reason === "control_off" ? "that power is off" : d.reason === "frozen" ? "card frozen" : d.reason === "insufficient" ? "not enough on the card" : "over the weekly limit"}</small></div>
+              <span className="pill rose">AED {whole(d.amount)}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div style={{ display: "none" }}>
       </div>
     </div>
   );
@@ -627,7 +641,7 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
             <Jars view={view} childName={childName} />
             <Limits view={view} childName={childName} />
             <Pledges view={view} childName={childName} busy={busy === "pledge"} onPledge={(c, a, n, r) => void makePledge(c, a, n, r)} onCancel={(id) => void cancelPledge(id)} onRelease={(id) => void releasePledge(id)} />
-            <section id="moves">{view.account ? <Recent acct={view.account} /> : null}</section>
+            <section id="moves">{view.account ? <Recent acct={view.account} childName={childName} /> : null}</section>
             <ConsentCard view={view} childName={childName} busy={busy === "consent"} onSet={(g) => void setConsent(g)} />
             <section id="history"><History api={api} childId={childId} tick={tick} /></section>
           </aside>

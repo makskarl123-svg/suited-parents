@@ -24,7 +24,8 @@ export interface Transaction { id: string; at: string; amount: number; currency:
 /** The bank's view of the account, read by the Money service through its connector. Null until the bank has a card. */
 export interface Jar { id: string; name: string; currency: string; balance: number; target?: number; createdAt: string }
 export interface FundView { currency: string; balance: number; contributions: Transaction[] }
-export interface AccountView { currency: string; balance: number; week: { spent: number; limit?: number; startedOn: string }; transactions: Transaction[] }
+export interface Decline { id: string; at: string; amount: number; currency: string; description: string; reason: "control_off" | "frozen" | "insufficient" | "over_limit"; control?: string }
+export interface AccountView { currency: string; balance: number; week: { spent: number; limit?: number; startedOn: string }; transactions: Transaction[]; declines?: Decline[] }
 
 /** The child's ask for money. Yes becomes a transfer through the bank; the amount can be changed on the way. */
 export interface TopUpRequest { id: string; childId: string; amount?: number; currency: string; note: string; at: string; status: "pending" | "approved" | "declined"; decidedBy?: string; decidedAt?: string; bankRef?: string }
