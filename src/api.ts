@@ -43,7 +43,10 @@ export type PaymentStatus = "due" | "sent" | "detected" | "confirmed" | "failed"
 export interface Payment { id: string; childId: string; kind: "allowance" | "pledge" | "ask" | "top-up"; amount: number; currency: string; description: string; fromGuardianId: string; status: PaymentStatus; history: { status: PaymentStatus; at: string; by: string; note?: string }[]; confirmedBy?: "provider" | "bank-read" | "family"; parentSaidSentAt?: string; childSaidReceivedAt?: string; failureReason?: string; createdAt: string }
 
 /** The child's own account, as Suited shows it. The IBAN stays with the payments provider. */
-export interface Payee { label: string; last4: string; registeredAt: string }
+export interface Payee { label: string; last4: string; registeredAt: string; check?: { result: PayeeCheck["result"]; maskedName?: string; bankName?: string; at: string } | null }
+
+/** The bank's answer to who holds an IBAN. `error`: the check could not run. */
+export interface PayeeCheck { result: "match" | "probable" | "review" | "no_match" | "error"; maskedName: string | null; bankName: string | null; active: boolean | null }
 
 /** A standing permission at the parent's bank for Suited to send money to their children's accounts within limits. */
 export interface Mandate { id: string; guardianId: string; childIds: string[]; provider: string; authorisationUrl: string; status: "pending" | "active" | "paused" | "ended" | "failed"; limits: { currency: string; maxPerPayment: number; maxPerWeek: number; startDate: string; endDate: string }; createdAt: string; updatedAt: string }
@@ -127,9 +130,14 @@ export class MoneyApi {
     return this.call(`/children/${encodeURIComponent(childId)}/payments/${encodeURIComponent(paymentId)}/sent`, { method: "POST", body: "{}" });
   }
 
-  /** Add the child's own account with the payments provider. */
-  setPayee(childId: string, iban: string, holderName: string, accountType: "Savings" | "CurrentAccount"): Promise<{ payee: Payee | null }> {
-    return this.call(`/children/${encodeURIComponent(childId)}/payee`, { method: "PUT", body: JSON.stringify({ iban, holderName, accountType }) });
+  /** Add the child's own account with the payments provider. `confirmed`: the parent said yes to a partial name match. */
+  setPayee(childId: string, iban: string, holderName: string, accountType: "Savings" | "CurrentAccount", confirmed = false): Promise<{ payee: Payee | null }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/payee`, { method: "PUT", body: JSON.stringify({ iban, holderName, accountType, ...(confirmed ? { confirmed: true } : {}) }) });
+  }
+
+  /** Confirmation of payee: who the bank says holds this IBAN (masked), and how well it matches the typed name. */
+  checkPayee(childId: string, iban: string, holderName: string): Promise<{ check: PayeeCheck }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/payee/check`, { method: "POST", body: JSON.stringify({ iban, holderName }) });
   }
 
   mandates(): Promise<{ guardianId: string; mandates: Mandate[] }> {

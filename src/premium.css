@@ -167,6 +167,14 @@
 .pa-err { margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: #FDE6E6; color: #A11B1B; font-size: 14px; }
 
 .pa-banks { display: grid; gap: 8px; margin-top: 12px; }
+/* Confirmation of payee: the bank's masked holder name, with the verdict as a colour */
+.pa-check { margin-top: 14px; padding: 12px 14px; border-radius: 14px; background: var(--wash); border: 1px solid var(--line); display: grid; gap: 2px; }
+.pa-check b { font-family: "DIN Round", sans-serif; font-size: 16px; letter-spacing: .04em; }
+.pa-check span { font-size: 13.5px; color: var(--ink-2); line-height: 1.4; }
+.pa-check.ok { background: var(--brand-wash); border-color: #BFE6A0; }
+.pa-check.warn { background: #FFF6DB; border-color: #F5D98A; }
+.pa-check.bad { background: #FDE6E6; border-color: #F3C7C7; }
+.pa-check.bad b { color: #A11B1B; }
 
 /* Connect your child */
 .pa-field input.pa-code { height: 64px; font-family: "DIN Round", sans-serif; font-size: 30px; font-weight: 700; letter-spacing: .14em; text-align: center; text-transform: uppercase; font-variant-numeric: tabular-nums; }
