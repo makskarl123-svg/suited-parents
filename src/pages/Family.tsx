@@ -7,7 +7,7 @@
  * is one endpoint in its contract.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, type CapabilitiesView, type ChildSummary, type Mandate, type MoneyApi, type Payment, type Pledge, type PledgeReward, type TopUpRequest } from "../api";
+import { ApiError, type Bank, type CapabilitiesView, type ChildSummary, type Mandate, type MoneyApi, type Payment, type Pledge, type PledgeReward, type TopUpRequest } from "../api";
 
 type Tab = "today" | "money" | "rewards" | "settings";
 const ART = { coins: "/money/art/coin-stack.webp", gift: "/money/art/gift.webp", trophy: "/money/art/trophy.webp", jar: "/money/art/jar-coins.webp", vault: "/money/art/vault.webp", piggy: "/money/art/piggy.webp", key: "/money/art/key.webp", metro: "/money/art/metro.webp", padlock: "/money/art/padlock.webp" };
@@ -27,8 +27,17 @@ const reduceMotion = (): boolean => typeof matchMedia !== "undefined" && matchMe
 /** How money reaches this child right now. */
 type How = "auto" | "manual";
 
-export function Family({ api, kids, guardianLabel, onSwitchGuardian }: { api: MoneyApi; kids: ChildSummary[]; guardianLabel: string; onSwitchGuardian?: () => void }) {
-  const [childId, setChildId] = useState<string>(kids[0]?.childId ?? "");
+/** "2 min ago", "3 h ago", "22 Nov": how fresh a bank reading is. */
+const ago = (iso: string): string => {
+  const ms = Date.now() - Date.parse(iso);
+  if (!Number.isFinite(ms)) return "";
+  const min = Math.max(0, Math.round(ms / 60_000));
+  return min < 1 ? "just now" : min < 60 ? `${min} min ago` : min < 24 * 60 ? `${Math.round(min / 60)} h ago` : new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+};
+
+export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectChild, focusName }: { api: MoneyApi; kids: ChildSummary[]; guardianLabel: string; onSwitchGuardian?: () => void; onConnectChild?: () => void; focusName?: string }) {
+  // Opens on the child just connected, when there is one.
+  const [childId, setChildId] = useState<string>((focusName ? kids.find((k) => k.displayName === focusName)?.childId : undefined) ?? kids[0]?.childId ?? "");
   const [tab, setTab] = useState<Tab>("today");
   const [view, setView] = useState<CapabilitiesView | null>(null);
   const [mandates, setMandates] = useState<Mandate[]>([]);
@@ -62,7 +71,7 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian }: { api: Mo
   useEffect(() => { seen.current = new Map(); setView(null); void load(); }, [load]);
 
   // While money is moving or a bank approval is pending, check back every few seconds.
-  const moving = (view?.payments ?? []).some((p) => p.status === "sent" || p.status === "detected") || mandates.some((m) => m.status === "pending");
+  const moving = (view?.payments ?? []).some((p) => p.status === "sent" || p.status === "detected") || mandates.some((m) => m.status === "pending") || view?.bank?.status === "pending";
   useEffect(() => {
     if (!moving) return;
     const t = setInterval(() => { void load(); }, 8000);
@@ -120,7 +129,7 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian }: { api: Mo
           {view && tab === "today" ? <Today view={view} name={name} total={total} how={how} pending={pending} busy={busy} run={run} afterSend={afterSend} say={say} api={api} childId={childId} onSetup={() => { setTab("settings"); window.scrollTo({ top: 0 }); }} /> : null}
           {view && tab === "money" ? <Money view={view} name={name} total={total} how={how} paused={!!paused} flying={flying} onSend={() => { setSheet("send"); }} onPocket={() => { setSheet("pocket"); }} /> : null}
           {view && tab === "rewards" ? <Rewards view={view} name={name} busy={busy} onNew={() => { setSheet("reward"); }} onCancel={(id) => void run(`cancel-${id}`, async () => { await api.cancelPledge(childId, id); return "Reward cancelled"; })} /> : null}
-          {view && tab === "settings" ? <Settings view={view} name={name} api={api} childId={childId} mine={mine} busy={busy} run={run} onPermission={() => { setSheet("permission"); }} guardianLabel={guardianLabel} onSwitchGuardian={onSwitchGuardian} /> : null}
+          {view && tab === "settings" ? <Settings view={view} name={name} api={api} childId={childId} mine={mine} busy={busy} run={run} onPermission={() => { setSheet("permission"); }} guardianLabel={guardianLabel} onSwitchGuardian={onSwitchGuardian} onConnectChild={onConnectChild} /> : null}
         </main>
         <nav className="pa-tabs" aria-label="Sections">
           {(["today", "money", "rewards", "settings"] as Tab[]).map((t) => (
@@ -168,8 +177,17 @@ function Today({ view, name, total, how, pending, busy, run, afterSend, say, api
   return (
     <div className="pa-stack">
       <div className="pa-hero">
-        <div className="lbl">{name}'s money</div>
-        <div className="num"><small>AED</small>{total.toLocaleString("en-US", { maximumFractionDigits: 2 })}</div>
+        {view.bank?.status === "active" && view.bank.balance ? (
+          <>
+            <div className="lbl">In {name}'s bank account · {ago(view.bank.balance.asOf)}</div>
+            <div className="num"><small>AED</small>{view.bank.balance.amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}</div>
+          </>
+        ) : (
+          <>
+            <div className="lbl">{name}'s money</div>
+            <div className="num"><small>AED</small>{total.toLocaleString("en-US", { maximumFractionDigits: 2 })}</div>
+          </>
+        )}
         <div className="stats">
           <div className="stat"><b>+{Math.round(inThisWeek)}</b><span>this week</span></div>
           <div className="stat"><b>{Math.round(saved)}</b><span>in jars</span></div>
@@ -381,7 +399,67 @@ function Rewards({ view, name, busy, onNew, onCancel }: { view: CapabilitiesView
 
 /* ───────────── Settings ───────────── */
 
-function Settings({ view, name, api, childId, mine, busy, run, onPermission, guardianLabel, onSwitchGuardian }: { view: CapabilitiesView; name: string; api: MoneyApi; childId: string; mine: Mandate[]; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; onPermission: () => void; guardianLabel: string; onSwitchGuardian?: () => void }) {
+/**
+ * The child's real balance: read-only access at the child's bank, approved once by the account holder.
+ * Suited can never move money with it. Shows the balance on Today and spots money landing.
+ */
+function BankBalance({ view, name, api, childId, busy, run, guardianLabel }: { view: CapabilitiesView; name: string; api: MoneyApi; childId: string; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; guardianLabel: string }) {
+  const [banks, setBanks] = useState<Bank[] | null>(null);
+  const [bankId, setBankId] = useState("");
+  const [email, setEmail] = useState(guardianLabel.includes("@") ? guardianLabel : "");
+  const [open, setOpen] = useState(false);
+  const bank = view.bank ?? null;
+  const live = bank && (bank.status === "active" || bank.status === "pending");
+  useEffect(() => {
+    if (!open || banks) return;
+    void api.banks().then((r) => { setBanks(r.banks); if (r.banks.length === 1 && r.banks[0]) setBankId(r.banks[0].id); }).catch(() => { setBanks([]); });
+  }, [open, banks, api]);
+  const until = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "");
+  return (
+    <div className="pa-card">
+      <span className="pa-eyebrow">{name}'s real balance</span>
+      {bank?.status === "active" ? (
+        <>
+          <div className="pa-row" style={{ marginTop: 8 }}>
+            <div className="pa-grow"><b className="din" style={{ fontSize: 15 }}>{bank.balance ? aed(bank.balance.amount) : "Reading…"}</b>
+              <div className="pa-small">{bank.bankName ?? "Bank"}{bank.balance ? ` · ending ${bank.balance.last4} · ${ago(bank.balance.asOf)}` : ""}{bank.expiresAt ? ` · until ${until(bank.expiresAt)}` : ""}</div></div>
+            <span className="pa-chip ok">Read-only</span>
+          </div>
+          <button type="button" className="pa-btn ghost small" style={{ marginTop: 12 }} disabled={busy === "bank"} onClick={() => void run("bank", async () => { await api.stopBankRead(childId); return `Stopped reading ${name}'s balance. Remove the access for good in your banking app.`; })}>Stop reading</button>
+        </>
+      ) : bank?.status === "pending" && !open ? (
+        <>
+          <div className="pa-muted" style={{ marginTop: 6 }}>Waiting for {name}'s bank. Approve in the tab that opened; this updates by itself.</div>
+          <button type="button" className="pa-btn ghost small" style={{ marginTop: 10 }} onClick={() => { setOpen(true); }}>Start again</button>
+        </>
+      ) : !open ? (
+        <>
+          <div className="pa-muted" style={{ marginTop: 6 }}>Show {name}'s real bank balance here and in {name}'s app, and know the moment money lands, with nothing to check. Read-only: Suited can never move money with it.</div>
+          <button type="button" className="pa-btn block" style={{ marginTop: 12 }} onClick={() => { setOpen(true); }}>Connect {name}'s bank</button>
+        </>
+      ) : (
+        <>
+          <div className="pa-muted" style={{ marginTop: 6 }}>Choose {name}'s bank. You'll approve read-only access there, once.</div>
+          <div className="pa-banks" role="radiogroup" aria-label="Bank">
+            {banks === null ? <div className="pa-small">Loading banks…</div> : banks.length === 0 ? <div className="pa-small">No banks are available right now.</div>
+              : banks.map((b) => <button key={b.id} type="button" role="radio" aria-checked={bankId === b.id} className="pa-choice" onClick={() => { setBankId(b.id); }}><div className="pa-grow"><b>{b.name}</b></div></button>)}
+          </div>
+          <div className="pa-field"><label htmlFor="bank-email">Your email</label><input id="bank-email" type="email" value={email} onChange={(e) => { setEmail(e.target.value); }} maxLength={50} placeholder="you@example.com" /></div>
+          <div className="pa-small" style={{ marginTop: 6 }}>The bank asks for it. Suited doesn't use it for anything else.</div>
+          <button type="button" className="pa-btn block" style={{ marginTop: 14 }} disabled={busy === "bank" || !bankId || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)} onClick={() => void run("bank", async () => {
+            const r = await api.connectBankRead(childId, bankId, email);
+            setOpen(false);
+            window.open(r.authorisationUrl, "_blank", "noopener");
+            return "Your bank has opened in a new tab. Approve read-only access there.";
+          })}>Continue to the bank</button>
+          {live ? null : <button type="button" className="pa-btn ghost block" style={{ marginTop: 8 }} onClick={() => { setOpen(false); }}>Not now</button>}
+        </>
+      )}
+    </div>
+  );
+}
+
+function Settings({ view, name, api, childId, mine, busy, run, onPermission, guardianLabel, onSwitchGuardian, onConnectChild }: { view: CapabilitiesView; name: string; api: MoneyApi; childId: string; mine: Mandate[]; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; onPermission: () => void; guardianLabel: string; onSwitchGuardian?: () => void; onConnectChild?: () => void }) {
   const [holder, setHolder] = useState(name);
   const [iban, setIban] = useState("");
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
@@ -428,6 +506,8 @@ function Settings({ view, name, api, childId, mine, busy, run, onPermission, gua
         </div>
       ) : null}
 
+      {setup?.readsBalances ? <BankBalance view={view} name={name} api={api} childId={childId} busy={busy} run={run} guardianLabel={guardianLabel} /> : null}
+
       <div className="pa-card">
         <span className="pa-eyebrow">Learning and money</span>
         <div className="pa-muted" style={{ marginTop: 6 }}>{consent?.withdrawnAt ? `Withdrawn. ${name}'s lessons no longer unlock rewards. What ${name} earned stays earned.` : `You agreed that ${name}'s lessons can unlock rewards you approve. You can take this back any time; what ${name} earned stays earned.`}</div>
@@ -435,6 +515,10 @@ function Settings({ view, name, api, childId, mine, busy, run, onPermission, gua
           : !confirmWithdraw ? <button type="button" className="pa-btn danger small" style={{ marginTop: 10 }} onClick={() => { setConfirmWithdraw(true); }}>Withdraw consent</button>
           : <div className="pa-row" style={{ marginTop: 10, gap: 8 }}><button type="button" className="pa-btn danger small" disabled={busy === "consent"} onClick={() => void run("consent", async () => { await api.setConsent(childId, false); setConfirmWithdraw(false); return "Consent withdrawn"; })}>Yes, withdraw</button><button type="button" className="pa-btn ghost small" onClick={() => { setConfirmWithdraw(false); }}>Keep it</button></div>}
       </div>
+
+      {onConnectChild ? (
+        <div className="pa-card pa-row"><div className="pa-grow"><b className="din" style={{ fontSize: 15 }}>Another child?</b><div className="pa-small">Sit with them and enter the code from their Money tab.</div></div><button type="button" className="pa-btn ghost small" onClick={onConnectChild}>Connect</button></div>
+      ) : null}
 
       <div className="pa-card pa-row"><div className="pa-grow"><b className="din" style={{ fontSize: 15 }}>Signed in</b><div className="pa-small">{guardianLabel}</div></div>{onSwitchGuardian ? <button type="button" className="pa-btn ghost small" onClick={onSwitchGuardian}>Switch</button> : null}</div>
     </div>
