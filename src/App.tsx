@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, MoneyApi, type ChildSummary } from "./api";
 import { AuthProvider, useIdentity } from "./auth";
-import { ChildPage } from "./pages/Child";
+import { Family } from "./pages/Family";
 import { InvitePage } from "./pages/Invite";
 
 // In development the Vite proxy maps /api → the Money sandbox. In production
@@ -87,6 +87,9 @@ function Home({ identity, signOut, mode, guardianLabel }: { identity: ReturnType
 
   const header = <div className="top"><span className="wm"><img src="/suited-logo.svg" alt="Suited" /><b>Money</b></span><span className="who">For parents</span></div>;
 
+  // The parent app proper: the Premium design with all of this guardian's children in one place.
+  if (!error && children && children.length > 0) return <Family api={api} kids={children} guardianLabel={guardianLabel} {...(mode === "dev" && signOut ? { onSwitchGuardian: signOut } : {})} />;
+
   return (
     <div className="frame">
       <Side children={children ?? []} picked={picked} onPick={setPicked} active={section} onSection={goSection} guardianLabel={guardianLabel} mode={mode} signOut={signOut} />
@@ -115,16 +118,6 @@ function Home({ identity, signOut, mode, guardianLabel }: { identity: ReturnType
               ))}
             </div>
           </div>
-        ) : null}
-        {current ? (
-          <>
-            <ChildPage api={api} childId={current.childId} childName={current.displayName || "Your child"} onSectionSeen={setSection} />
-            {children && children.length > 1 ? (
-              <div className="actions" style={{ justifyContent: "center", paddingBottom: 24 }}>
-                <button className="btn ghost" onClick={() => { setPicked(null); }}>Another child</button>
-              </div>
-            ) : null}
-          </>
         ) : null}
         {mode === "dev" && signOut ? (
           <div className="actions" style={{ justifyContent: "center", paddingBottom: 24 }}>
