@@ -117,7 +117,7 @@
 .pa-lrow .amt { font-family: "DIN Round", sans-serif; font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; }
 
 .pa-choice { display: flex; gap: 12px; align-items: flex-start; text-align: left; width: 100%; padding: 14px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); margin-top: 10px; }
-.pa-choice[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.pa-choice[aria-pressed="true"], .pa-choice[aria-checked="true"] { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
 .pa-choice b { font-family: "DIN Round", sans-serif; font-size: 16px; display: block; }
 .pa-choice small { font-size: 13px; color: var(--ink-2); line-height: 1.35; display: block; margin-top: 2px; }
 
@@ -165,4 +165,18 @@
 .pa-frank .bub b { display: block; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--brand-deep); margin-bottom: 4px; }
 .pa-frank .bub p { margin: 0; font-size: 15px; line-height: 1.45; }
 .pa-err { margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: #FDE6E6; color: #A11B1B; font-size: 14px; }
+
+.pa-banks { display: grid; gap: 8px; margin-top: 12px; }
+
+/* Connect your child */
+.pa-field input.pa-code { height: 64px; font-family: "DIN Round", sans-serif; font-size: 30px; font-weight: 700; letter-spacing: .14em; text-align: center; text-transform: uppercase; font-variant-numeric: tabular-nums; }
+.pa-consent h2 { font-family: "DIN Round", sans-serif; font-size: 16px; font-weight: 700; margin: 14px 0 6px; }
+.pa-consent h2:first-child { margin-top: 0; }
+.pa-consent ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; line-height: 1.45; color: var(--ink-2); }
+.pa-consent b { color: var(--ink); }
+.pa-agree { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; font-size: 14.5px; line-height: 1.45; }
+.pa-agree input { width: 22px; height: 22px; margin: 1px 0 0; flex: none; accent-color: var(--brand-deep); }
+.pa-wait { display: grid; justify-items: center; text-align: center; gap: 10px; padding: 26px 18px; }
+.pa-pulse { width: 18px; height: 18px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 0 rgba(88, 204, 2, .5); animation: pa-pulse 1.6s ease-out infinite; }
+@keyframes pa-pulse { to { box-shadow: 0 0 0 18px rgba(88, 204, 2, 0); } }
 @media (prefers-reduced-motion: reduce) { .pa *, .pa *::before, .pa *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

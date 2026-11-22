@@ -48,15 +48,22 @@ export interface Payee { label: string; last4: string; registeredAt: string }
 /** A standing permission at the parent's bank for Suited to send money to their children's accounts within limits. */
 export interface Mandate { id: string; guardianId: string; childIds: string[]; provider: string; authorisationUrl: string; status: "pending" | "active" | "paused" | "ended" | "failed"; limits: { currency: string; maxPerPayment: number; maxPerWeek: number; startDate: string; endDate: string }; createdAt: string; updatedAt: string }
 
-export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[]; account?: AccountView | null; requests?: TopUpRequest[]; allowance?: Allowance | null; pledges?: Pledge[]; card?: { frozen: boolean } | null; consent?: { givenAt: string; byGuardianId: string; withdrawnAt: string | null } | null; jars?: Jar[]; fund?: FundView | null; payments?: Payment[]; payee?: Payee | null; setup?: PaymentSetup }
+export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[]; account?: AccountView | null; requests?: TopUpRequest[]; allowance?: Allowance | null; pledges?: Pledge[]; card?: { frozen: boolean } | null; consent?: { givenAt: string; byGuardianId: string; withdrawnAt: string | null } | null; jars?: Jar[]; fund?: FundView | null; payments?: Payment[]; payee?: Payee | null; bank?: BankView | null; setup?: PaymentSetup }
+
+/** The child's real balance, read from their bank with the account holder's read-only permission. */
+export interface BankView { status: "pending" | "active" | "ended" | "failed"; bankName: string | null; expiresAt: string | null; balance: { amount: number; currency: string; asOf: string; last4: string } | null }
+export interface Bank { id: string; name: string; logoUrl?: string }
 
 /** What the payments side can do: whether a child's account can be added, and whether automatic payments exist. */
-export interface PaymentSetup { provider: string; acceptsAccounts: boolean; automatic: boolean }
+export interface PaymentSetup { provider: string; acceptsAccounts: boolean; automatic: boolean; readsBalances?: boolean }
 export interface Snapshot { capability: string; state: CapabilityState; label: string; earnedAt: string | null; limit: Limit | null }
 export interface AuditEntry { at: string; childId: string; capability?: string; what: string; requestId?: string; actor?: string }
 
 export type Verb = "approve" | "not-yet" | "open-early" | "close" | "reopen";
 export interface ChildSummary { childId: string; displayName: string; gateSet: string }
+
+/** A connection a parent started from the code on a child's screen. */
+export interface PairingSummary { id: string; status: "waiting" | "claimed" | "connected" | "declined" | "cancelled" | "expired"; displayName: string; grade: number; expiresAt: string; decidedAt?: string }
 
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
@@ -80,6 +87,21 @@ export class MoneyApi {
 
   myChildren(): Promise<{ guardianId: string; children: ChildSummary[] }> {
     return this.call("/me/children");
+  }
+
+  /** The code from the child's screen: whose it is, before agreeing to anything. */
+  previewPairing(code: string): Promise<{ displayName: string; grade: number; expiresAt: string }> {
+    return this.call("/me/pairing/preview", { method: "POST", body: JSON.stringify({ code }) });
+  }
+
+  /** Agree and connect. The parent's identity comes from their sign-in, never from here. */
+  claimPairing(code: string, consentVersion: string): Promise<{ status: string; displayName: string; expiresAt: string }> {
+    return this.call("/me/pairing/claim", { method: "POST", body: JSON.stringify({ code, consentVersion, agreed: true }) });
+  }
+
+  /** Connections this parent started: waiting for the child to say yes, or finished. */
+  myPairings(): Promise<{ pairings: PairingSummary[] }> {
+    return this.call("/me/pairings");
   }
 
   capabilities(childId: string): Promise<CapabilitiesView> {
@@ -125,6 +147,20 @@ export class MoneyApi {
   /** Drop a permission the bank never approved (a wrong account, a bank error page). */
   cancelMandate(mandateId: string): Promise<{ mandate: Mandate }> {
     return this.call(`/me/mandates/${encodeURIComponent(mandateId)}/cancel`, { method: "POST", body: "{}" });
+  }
+
+  /** Banks that can share a child's balance. */
+  banks(): Promise<{ banks: Bank[] }> {
+    return this.call("/banks");
+  }
+
+  /** Ask the child's bank for read-only access to the balance; the link is where the account holder approves it. */
+  connectBankRead(childId: string, bankId: string, email: string): Promise<{ authorisationUrl: string; bank: BankView }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/bank-read`, { method: "POST", body: JSON.stringify({ bankId, email }) });
+  }
+
+  stopBankRead(childId: string): Promise<{ bank: BankView | null }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/bank-read/stop`, { method: "POST", body: "{}" });
   }
 
   /** Answer the child's ask. Approving with no amount uses the child's. */

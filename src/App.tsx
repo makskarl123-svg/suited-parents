@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiError, MoneyApi, type ChildSummary } from "./api";
 import { AuthProvider, useIdentity } from "./auth";
 import { Family } from "./pages/Family";
-import { InvitePage } from "./pages/Invite";
+import { Connect, codeFromLink } from "./pages/Connect";
 
 // In development the Vite proxy maps /api → the Money sandbox. In production
 // the app is told where the service lives.
@@ -45,16 +45,8 @@ function Side({ children, picked, onPick, active, onSection, guardianLabel, mode
   );
 }
 
-/** The one deep link the app has: /invite/<token>. Everything else is the overview. */
-function inviteToken(): string | null {
-  const m = /^\/invite\/([^/]+)\/?$/.exec(window.location.pathname);
-  return m?.[1] ? decodeURIComponent(m[1]) : null;
-}
-
 function Inner() {
   const { identity, signOut, mode, guardianLabel } = useIdentity();
-  const [invite, setInvite] = useState<string | null>(() => inviteToken());
-  if (invite) return <InvitePage token={invite} onLinked={() => { window.history.replaceState(null, "", "/"); setInvite(null); }} />;
   return <Home identity={identity} signOut={signOut} mode={mode} guardianLabel={guardianLabel} />;
 }
 
@@ -64,6 +56,9 @@ function Home({ identity, signOut, mode, guardianLabel }: { identity: ReturnType
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [section, setSection] = useState<string>("overview");
+  // Connecting a child: forced when there is none yet, on demand from Settings, or opened by the QR code on a child's screen.
+  const [connecting, setConnecting] = useState<boolean>(() => codeFromLink() !== "");
+  const [loads, setLoads] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -77,7 +72,13 @@ function Home({ identity, signOut, mode, guardianLabel }: { identity: ReturnType
       else setError(e instanceof Error ? e.message : "Something went wrong");
     });
     return () => { live = false; };
-  }, [api]);
+  }, [api, loads]);
+
+  const [focus, setFocus] = useState<string | null>(null);
+  const connected = (displayName: string) => { window.history.replaceState(null, "", "/"); setFocus(displayName); setConnecting(false); setLoads((n) => n + 1); };
+  if (!error && children !== null && (connecting || children.length === 0)) {
+    return <Connect api={api} first={children.length === 0} onConnected={connected} {...(children.length > 0 ? { onCancel: () => { window.history.replaceState(null, "", "/"); setConnecting(false); } } : {})} />;
+  }
 
   const current = children?.find((c) => c.childId === picked) ?? null;
   const goSection = (id: string) => {
@@ -88,7 +89,7 @@ function Home({ identity, signOut, mode, guardianLabel }: { identity: ReturnType
   const header = <div className="top"><span className="wm"><img src="/suited-logo.svg" alt="Suited" /><b>Money</b></span><span className="who">For parents</span></div>;
 
   // The parent app proper: the Premium design with all of this guardian's children in one place.
-  if (!error && children && children.length > 0) return <Family api={api} kids={children} guardianLabel={guardianLabel} {...(mode === "dev" && signOut ? { onSwitchGuardian: signOut } : {})} />;
+  if (!error && children && children.length > 0) return <Family key={`${loads}-${focus ?? ""}`} api={api} kids={children} guardianLabel={guardianLabel} {...(focus ? { focusName: focus } : {})} onConnectChild={() => { setConnecting(true); }} {...(mode === "dev" && signOut ? { onSwitchGuardian: signOut } : {})} />;
 
   return (
     <div className="frame">
