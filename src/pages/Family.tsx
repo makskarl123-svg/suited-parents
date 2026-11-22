@@ -117,7 +117,7 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian }: { api: Mo
           </div>
           {error ? <div className="pa-err">{error}</div> : null}
           {!view && !error ? <div className="pa-card pa-muted">Loading…</div> : null}
-          {view && tab === "today" ? <Today view={view} name={name} total={total} how={how} pending={pending} busy={busy} run={run} afterSend={afterSend} say={say} api={api} childId={childId} /> : null}
+          {view && tab === "today" ? <Today view={view} name={name} total={total} how={how} pending={pending} busy={busy} run={run} afterSend={afterSend} say={say} api={api} childId={childId} onSetup={() => { setTab("settings"); window.scrollTo({ top: 0 }); }} /> : null}
           {view && tab === "money" ? <Money view={view} name={name} total={total} how={how} paused={!!paused} flying={flying} onSend={() => { setSheet("send"); }} onPocket={() => { setSheet("pocket"); }} /> : null}
           {view && tab === "rewards" ? <Rewards view={view} name={name} busy={busy} onNew={() => { setSheet("reward"); }} onCancel={(id) => void run(`cancel-${id}`, async () => { await api.cancelPledge(childId, id); return "Reward cancelled"; })} /> : null}
           {view && tab === "settings" ? <Settings view={view} name={name} api={api} childId={childId} mine={mine} busy={busy} run={run} onPermission={() => { setSheet("permission"); }} guardianLabel={guardianLabel} onSwitchGuardian={onSwitchGuardian} /> : null}
@@ -142,13 +142,16 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian }: { api: Mo
   );
 }
 
+/** The child's account is the first step whenever the payments side can take one and none is added yet. */
+const needsAccount = (v: CapabilitiesView): boolean => !!v.setup?.acceptsAccounts && !v.payee;
+
 function decisionsCount(v: CapabilitiesView, how: How, pending: Mandate | undefined): number {
-  return (v.pledges ?? []).filter((p) => p.status === "due").length + (v.requests ?? []).filter((r) => r.status === "pending").length + (how === "manual" ? (v.payments ?? []).filter((p) => p.status === "due").length : 0) + (pending ? 1 : 0);
+  return (needsAccount(v) ? 1 : 0) + (v.pledges ?? []).filter((p) => p.status === "due").length + (v.requests ?? []).filter((r) => r.status === "pending").length + (how === "manual" ? (v.payments ?? []).filter((p) => p.status === "due").length : 0) + (pending ? 1 : 0);
 }
 
 /* ───────────── Today ───────────── */
 
-function Today({ view, name, total, how, pending, busy, run, afterSend, say, api, childId }: { view: CapabilitiesView; name: string; total: number; how: How; pending: Mandate | undefined; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; afterSend: (p: Payment | undefined) => void; say: (m: string, undo?: () => void) => void; api: MoneyApi; childId: string }) {
+function Today({ view, name, total, how, pending, busy, run, afterSend, say, api, childId, onSetup }: { view: CapabilitiesView; name: string; total: number; how: How; pending: Mandate | undefined; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; afterSend: (p: Payment | undefined) => void; say: (m: string, undo?: () => void) => void; api: MoneyApi; childId: string; onSetup: () => void }) {
   const due = (view.pledges ?? []).filter((p) => p.status === "due");
   const asks = (view.requests ?? []).filter((r) => r.status === "pending");
   const toSend = how === "manual" ? (view.payments ?? []).filter((p) => p.status === "due") : [];
@@ -158,7 +161,8 @@ function Today({ view, name, total, how, pending, busy, run, afterSend, say, api
   const saved = (view.jars ?? []).reduce((s, j) => s + j.balance, 0);
   const lessons = view.capabilities.reduce((s, c) => s + (c.progress?.done ?? 0), 0);
   const open = (view.pledges ?? []).filter((p) => p.status === "open");
-  const count = due.length + asks.length + toSend.length + (pending ? 1 : 0);
+  const setupStep = needsAccount(view);
+  const count = (setupStep ? 1 : 0) + due.length + asks.length + toSend.length + (pending ? 1 : 0);
   const capOf = (p: Pledge) => view.capabilities.find((c) => c.capability === p.capability);
 
   return (
@@ -175,6 +179,14 @@ function Today({ view, name, total, how, pending, busy, run, afterSend, say, api
       </div>
 
       <div className="pa-row" style={{ justifyContent: "space-between" }}><span className="pa-eyebrow">{count ? `Your call · ${count}` : "Your call"}</span>{count ? <span className="pa-small">Takes a minute</span> : null}</div>
+
+      {setupStep ? (
+        <article className="pa-decision" style={{ ["--edge" as string]: "#58CC02" }}>
+          <div className="pa-row" style={{ alignItems: "flex-start" }}><img className="art" src={ART.vault} alt="" />
+            <div className="pa-grow"><div className="who">First step</div><div className="what">Add {name}'s account</div><div className="why">{name}'s own savings account at your bank, so pocket money and rewards go straight to {name}. Takes a minute.</div></div></div>
+          <div className="acts"><button type="button" className="pa-btn" onClick={onSetup}>Add {name}'s account</button></div>
+        </article>
+      ) : null}
 
       {pending ? (
         <article className="pa-decision" style={{ ["--edge" as string]: "#1CB0F6" }}>
@@ -381,13 +393,13 @@ function Settings({ view, name, api, childId, mine, busy, run, onPermission, gua
       <div className="pa-card">
         <span className="pa-eyebrow">{name}'s account</span>
         {view.payee ? (
-          <div className="pa-lrow" style={{ border: 0 }}><div className="ic"><img src={ART.vault} alt="" /></div><div className="pa-grow"><b>{view.payee.label}</b><small>Ending {view.payee.last4} · checked with {name}'s name</small></div><span className="pa-chip ok">Ready</span></div>
+          <div className="pa-lrow" style={{ border: 0 }}><div className="ic"><img src={ART.vault} alt="" /></div><div className="pa-grow"><b>{view.payee.label}</b><small>Ending {view.payee.last4} · money goes straight here</small></div><span className="pa-chip ok">Ready</span></div>
         ) : setup?.acceptsAccounts ? (
           <>
             <div className="pa-muted" style={{ marginTop: 6 }}>{name}'s own savings account, so money goes straight to {name}. Suited keeps only the last four digits.</div>
             <div className="pa-field"><label htmlFor="acct-name">Name on the account</label><input id="acct-name" value={holder} onChange={(e) => { setHolder(e.target.value); }} maxLength={70} /></div>
             <div className="pa-field"><label htmlFor="acct-iban">IBAN</label><input id="acct-iban" value={iban} onChange={(e) => { setIban(e.target.value); }} maxLength={40} placeholder="AE07 0331 2345 6789 0123 456" /></div>
-            <button type="button" className="pa-btn block" style={{ marginTop: 14 }} disabled={busy === "payee" || !/^[A-Za-z0-9 ]{8,40}$/.test(iban.trim()) || !holder.trim()} onClick={() => void run("payee", async () => { const r = await api.setPayee(childId, iban, holder.trim(), "Savings"); return r.payee ? `${r.payee.label} added, ending ${r.payee.last4}` : "Account added"; })}>Check and add</button>
+            <button type="button" className="pa-btn block" style={{ marginTop: 14 }} disabled={busy === "payee" || !/^[A-Za-z0-9 ]{8,40}$/.test(iban.trim()) || !holder.trim()} onClick={() => void run("payee", async () => { const r = await api.setPayee(childId, iban, holder.trim(), "Savings"); return r.payee ? `${r.payee.label} added, ending ${r.payee.last4}` : "Account added"; })}>Add account</button>
           </>
         ) : <div className="pa-muted" style={{ marginTop: 6 }}>You send each payment from your own banking app to {name}'s account, and {name} confirms it arrived.</div>}
       </div>
