@@ -431,7 +431,7 @@ function BankBalance({ view, name, api, childId, busy, run }: { view: Capabiliti
       <span className="pa-eyebrow">{name}'s real balance</span>
       {bank?.status === "active" && bank.matchesAccount === false && !open ? (
         <>
-          <div className="pa-check warn"><b>A different account was shared</b><span>Your bank shared the account ending {bank.balance?.last4 ?? "in other digits"}, but {name}'s money goes to the one ending {view.payee?.last4}. Payments still work; we just can't spot them landing. Share the account ending {view.payee?.last4}, or stop reading.</span></div>
+          <div className="pa-check warn"><b>We're looking at the wrong account</b><span>We send {name}'s money to the account ending {view.payee?.last4}, but when you approved at your bank you let us see the account ending {bank.balance?.last4 ?? "in other digits"}. Payments still work. To show {name}'s real balance, approve again and tick the account ending {view.payee?.last4}.</span></div>
           <div className="pa-row" style={{ gap: 8, marginTop: 12 }}>
             <button type="button" className="pa-btn small" onClick={() => { setOpen(true); }}>Share the right account</button>
             <button type="button" className="pa-btn ghost small" disabled={busy === "bank"} onClick={() => void run("bank", async () => { await api.stopBankRead(childId); return `Stopped reading. Remove the access for good in your banking app.`; })}>Stop reading</button>
