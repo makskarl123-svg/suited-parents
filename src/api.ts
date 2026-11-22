@@ -122,6 +122,11 @@ export class MoneyApi {
     return this.call(`/me/mandates/${encodeURIComponent(mandateId)}/${paused ? "pause" : "resume"}`, { method: "POST", body: "{}" });
   }
 
+  /** Drop a permission the bank never approved (a wrong account, a bank error page). */
+  cancelMandate(mandateId: string): Promise<{ mandate: Mandate }> {
+    return this.call(`/me/mandates/${encodeURIComponent(mandateId)}/cancel`, { method: "POST", body: "{}" });
+  }
+
   /** Answer the child's ask. Approving with no amount uses the child's. */
   decideRequest(childId: string, requestId: string, approve: boolean, amount?: number): Promise<{ request: TopUpRequest; transaction?: Transaction }> {
     return this.call(`/children/${encodeURIComponent(childId)}/requests/${encodeURIComponent(requestId)}/${approve ? "approve" : "decline"}`, { method: "POST", body: JSON.stringify(amount !== undefined ? { amount } : {}) });

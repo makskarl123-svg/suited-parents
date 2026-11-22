@@ -77,7 +77,7 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian }: { api: Mo
   const run = async (key: string, fn: () => Promise<unknown>): Promise<void> => {
     setBusy(key);
     try { const m = await fn(); if (typeof m === "string" && m) say(m); await load(); }
-    catch (e) { say(e instanceof Error ? e.message : "Something went wrong"); }
+    catch (e) { const m = e instanceof Error && e.message ? e.message : "Something went wrong"; say(m.charAt(0).toUpperCase() + m.slice(1)); }
     finally { setBusy(null); }
   };
 
@@ -192,7 +192,9 @@ function Today({ view, name, total, how, pending, busy, run, afterSend, say, api
         <article className="pa-decision" style={{ ["--edge" as string]: "#1CB0F6" }}>
           <div className="pa-row" style={{ alignItems: "flex-start" }}><img className="art" src={ART.vault} alt="" />
             <div className="pa-grow"><div className="who">Waiting for your bank</div><div className="what">Finish approving automatic payments</div><div className="why">Up to {aed(pending.limits.maxPerPayment)} a payment, {aed(pending.limits.maxPerWeek)} a week.</div></div></div>
-          <div className="acts"><a className="pa-btn" href={pending.authorisationUrl} target="_blank" rel="noreferrer">Approve at my bank</a></div>
+          <div className="acts"><a className="pa-btn" href={pending.authorisationUrl} target="_blank" rel="noreferrer">Approve at my bank</a>
+            <button type="button" className="pa-btn ghost" style={{ flex: "0 0 auto", minWidth: 0, paddingInline: 20 }} disabled={busy === "mandate"} onClick={() => void run("mandate", async () => { await api.cancelMandate(pending.id); return "Cancelled. Check the account in Settings, then try again"; })}>Cancel</button></div>
+          <div className="pa-small" style={{ marginTop: 8 }}>Bank couldn't find the account? Cancel, check {name}'s account in Settings, and start again.</div>
         </article>
       ) : null}
 
@@ -383,6 +385,7 @@ function Settings({ view, name, api, childId, mine, busy, run, onPermission, gua
   const [holder, setHolder] = useState(name);
   const [iban, setIban] = useState("");
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
+  const [changing, setChanging] = useState(false);
   const current = [...mine].reverse().find((m) => m.status === "active" || m.status === "paused" || m.status === "pending");
   const setup = view.setup;
   const consent = view.consent ?? null;
@@ -392,14 +395,17 @@ function Settings({ view, name, api, childId, mine, busy, run, onPermission, gua
       <h1 className="pa-h1">Settings</h1>
       <div className="pa-card">
         <span className="pa-eyebrow">{name}'s account</span>
-        {view.payee ? (
-          <div className="pa-lrow" style={{ border: 0 }}><div className="ic"><img src={ART.vault} alt="" /></div><div className="pa-grow"><b>{view.payee.label}</b><small>Ending {view.payee.last4} · money goes straight here</small></div><span className="pa-chip ok">Ready</span></div>
+        {view.payee && !changing ? (
+          <div className="pa-lrow" style={{ border: 0 }}><div className="ic"><img src={ART.vault} alt="" /></div><div className="pa-grow"><b>{view.payee.label}</b><small>Ending {view.payee.last4} · money goes straight here</small></div>
+            {setup?.acceptsAccounts ? <button type="button" className="pa-btn ghost small" onClick={() => { setIban(""); setChanging(true); }}>Change</button> : <span className="pa-chip ok">Ready</span>}</div>
         ) : setup?.acceptsAccounts ? (
           <>
             <div className="pa-muted" style={{ marginTop: 6 }}>{name}'s own savings account, so money goes straight to {name}. Suited keeps only the last four digits.</div>
+            {changing && current ? <div className="pa-small" style={{ marginTop: 8 }}>Automatic payments stop when you change the account. You approve them again for the new one.</div> : null}
             <div className="pa-field"><label htmlFor="acct-name">Name on the account</label><input id="acct-name" value={holder} onChange={(e) => { setHolder(e.target.value); }} maxLength={70} /></div>
             <div className="pa-field"><label htmlFor="acct-iban">IBAN</label><input id="acct-iban" value={iban} onChange={(e) => { setIban(e.target.value); }} maxLength={40} placeholder="AE07 0331 2345 6789 0123 456" /></div>
-            <button type="button" className="pa-btn block" style={{ marginTop: 14 }} disabled={busy === "payee" || !/^[A-Za-z0-9 ]{8,40}$/.test(iban.trim()) || !holder.trim()} onClick={() => void run("payee", async () => { const r = await api.setPayee(childId, iban, holder.trim(), "Savings"); return r.payee ? `${r.payee.label} added, ending ${r.payee.last4}` : "Account added"; })}>Add account</button>
+            <button type="button" className="pa-btn block" style={{ marginTop: 14 }} disabled={busy === "payee" || !/^[A-Za-z0-9 ]{8,40}$/.test(iban.trim()) || !holder.trim()} onClick={() => void run("payee", async () => { const r = await api.setPayee(childId, iban, holder.trim(), "Savings"); setChanging(false); return r.payee ? `${r.payee.label} added, ending ${r.payee.last4}` : "Account added"; })}>{changing ? "Use this account" : "Add account"}</button>
+            {changing ? <button type="button" className="pa-btn ghost block" style={{ marginTop: 8 }} onClick={() => { setChanging(false); }}>Keep the current account</button> : null}
           </>
         ) : <div className="pa-muted" style={{ marginTop: 6 }}>You send each payment from your own banking app to {name}'s account, and {name} confirms it arrived.</div>}
       </div>
@@ -415,7 +421,7 @@ function Settings({ view, name, api, childId, mine, busy, run, onPermission, gua
             <div className="pa-row" style={{ marginTop: 14 }}>
               <div className="pa-grow"><b className="din" style={{ fontSize: 15 }}>{current.status === "pending" ? "Waiting for your bank" : current.status === "paused" ? "Automatic payments paused" : "Automatic payments on"}</b>
                 <div className="pa-small">Up to {aed(current.limits.maxPerPayment)} a payment and {aed(current.limits.maxPerWeek)} a week, until {until(current.limits.endDate)}.{current.status === "active" ? " Cancel for good in your banking app." : ""}</div></div>
-              {current.status === "pending" ? <a className="pa-btn small" href={current.authorisationUrl} target="_blank" rel="noreferrer">Approve</a>
+              {current.status === "pending" ? <div className="pa-row" style={{ gap: 8 }}><button type="button" className="pa-btn ghost small" disabled={busy === "mandate"} onClick={() => void run("mandate", async () => { await api.cancelMandate(current.id); return "Cancelled. Check the account, then try again"; })}>Cancel</button><a className="pa-btn small" href={current.authorisationUrl} target="_blank" rel="noreferrer">Approve</a></div>
                 : <button type="button" className="pa-switch" role="switch" aria-checked={current.status === "active"} aria-label="Automatic payments" disabled={busy === "mandate"} onClick={() => void run("mandate", async () => { await api.setMandatePaused(current.id, current.status === "active"); return current.status === "active" ? "Automatic payments paused" : "Automatic payments back on"; })} />}
             </div>
           ) : null}
