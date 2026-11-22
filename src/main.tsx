@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { CLERK_KEY } from "./auth";
 import "./styles.css";
+import "./premium.css";
 
 // The dev guardian picker must never reach a real family.
 if (import.meta.env.PROD && !CLERK_KEY) {
