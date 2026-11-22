@@ -403,10 +403,9 @@ function Rewards({ view, name, busy, onNew, onCancel }: { view: CapabilitiesView
  * The child's real balance: read-only access at the child's bank, approved once by the account holder.
  * Suited can never move money with it. Shows the balance on Today and spots money landing.
  */
-function BankBalance({ view, name, api, childId, busy, run, guardianLabel }: { view: CapabilitiesView; name: string; api: MoneyApi; childId: string; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; guardianLabel: string }) {
+function BankBalance({ view, name, api, childId, busy, run }: { view: CapabilitiesView; name: string; api: MoneyApi; childId: string; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void> }) {
   const [banks, setBanks] = useState<Bank[] | null>(null);
   const [bankId, setBankId] = useState("");
-  const [email, setEmail] = useState(guardianLabel.includes("@") ? guardianLabel : "");
   const [open, setOpen] = useState(false);
   const bank = view.bank ?? null;
   const live = bank && (bank.status === "active" || bank.status === "pending");
@@ -444,10 +443,9 @@ function BankBalance({ view, name, api, childId, busy, run, guardianLabel }: { v
             {banks === null ? <div className="pa-small">Loading banks…</div> : banks.length === 0 ? <div className="pa-small">No banks are available right now.</div>
               : banks.map((b) => <button key={b.id} type="button" role="radio" aria-checked={bankId === b.id} className="pa-choice" onClick={() => { setBankId(b.id); }}><div className="pa-grow"><b>{b.name}</b></div></button>)}
           </div>
-          <div className="pa-field"><label htmlFor="bank-email">Your email</label><input id="bank-email" type="email" value={email} onChange={(e) => { setEmail(e.target.value); }} maxLength={50} placeholder="you@example.com" /></div>
-          <div className="pa-small" style={{ marginTop: 6 }}>The bank asks for it. Suited doesn't use it for anything else.</div>
-          <button type="button" className="pa-btn block" style={{ marginTop: 14 }} disabled={busy === "bank" || !bankId || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)} onClick={() => void run("bank", async () => {
-            const r = await api.connectBankRead(childId, bankId, email);
+          <div className="pa-small" style={{ marginTop: 10 }}>Your bank receives the email you signed in to Suited with, so it knows the request is yours. Nothing else about you or {name}.</div>
+          <button type="button" className="pa-btn block" style={{ marginTop: 14 }} disabled={busy === "bank" || !bankId} onClick={() => void run("bank", async () => {
+            const r = await api.connectBankRead(childId, bankId);
             setOpen(false);
             window.open(r.authorisationUrl, "_blank", "noopener");
             return "Your bank has opened in a new tab. Approve read-only access there.";
@@ -506,7 +504,7 @@ function Settings({ view, name, api, childId, mine, busy, run, onPermission, gua
         </div>
       ) : null}
 
-      {setup?.readsBalances ? <BankBalance view={view} name={name} api={api} childId={childId} busy={busy} run={run} guardianLabel={guardianLabel} /> : null}
+      {setup?.readsBalances ? <BankBalance view={view} name={name} api={api} childId={childId} busy={busy} run={run} /> : null}
 
       <div className="pa-card">
         <span className="pa-eyebrow">Learning and money</span>

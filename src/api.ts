@@ -154,9 +154,12 @@ export class MoneyApi {
     return this.call("/banks");
   }
 
-  /** Ask the child's bank for read-only access to the balance; the link is where the account holder approves it. */
-  connectBankRead(childId: string, bankId: string, email: string): Promise<{ authorisationUrl: string; bank: BankView }> {
-    return this.call(`/children/${encodeURIComponent(childId)}/bank-read`, { method: "POST", body: JSON.stringify({ bankId, email }) });
+  /**
+   * Ask the child's bank for read-only access to the balance; the link is where the account holder approves it.
+   * The email the bank needs is the parent's verified sign-in email, which the Money service takes from Clerk.
+   */
+  connectBankRead(childId: string, bankId: string): Promise<{ authorisationUrl: string; bank: BankView }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/bank-read`, { method: "POST", body: JSON.stringify({ bankId }) });
   }
 
   stopBankRead(childId: string): Promise<{ bank: BankView | null }> {
