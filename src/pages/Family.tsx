@@ -95,6 +95,8 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
   const paused = mine.find((m) => m.status === "paused");
   const pending = mine.find((m) => m.status === "pending");
   const how: How = active ? "auto" : "manual";
+  // Automatic payments ended without the parent turning them off (the child's account changed): say so, offer one tap back.
+  const stopped = !!view?.setup?.automatic && !!view.payee && !active && !paused && !pending && mine.some((m) => m.status === "ended");
 
   /** After a send: animate the coin when Suited moves it, or point to the copy card when the parent does. */
   const afterSend = (p: Payment | undefined): void => {
@@ -121,12 +123,12 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
             </div>
             <button type="button" className="pa-bell" aria-label="What needs you" onClick={() => { setTab("today"); }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5E6B63" strokeWidth="2.2" strokeLinecap="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0" /></svg>
-              {view && decisionsCount(view, how, pending) > 0 ? <i>{decisionsCount(view, how, pending)}</i> : null}
+              {view && decisionsCount(view, how, pending, stopped) > 0 ? <i>{decisionsCount(view, how, pending, stopped)}</i> : null}
             </button>
           </div>
           {error ? <div className="pa-err">{error}</div> : null}
           {!view && !error ? <div className="pa-card pa-muted">Loading…</div> : null}
-          {view && tab === "today" ? <Today view={view} name={name} total={total} how={how} pending={pending} busy={busy} run={run} afterSend={afterSend} say={say} api={api} childId={childId} onSetup={() => { setTab("settings"); window.scrollTo({ top: 0 }); }} /> : null}
+          {view && tab === "today" ? <Today view={view} name={name} total={total} how={how} pending={pending} busy={busy} run={run} afterSend={afterSend} say={say} api={api} childId={childId} onSetup={() => { setTab("settings"); window.scrollTo({ top: 0 }); }} stopped={stopped} onReapprove={() => { setSheet("permission"); }} /> : null}
           {view && tab === "money" ? <Money view={view} name={name} total={total} how={how} paused={!!paused} flying={flying} onSend={() => { setSheet("send"); }} onPocket={() => { setSheet("pocket"); }} /> : null}
           {view && tab === "rewards" ? <Rewards view={view} name={name} busy={busy} onNew={() => { setSheet("reward"); }} onCancel={(id) => void run(`cancel-${id}`, async () => { await api.cancelPledge(childId, id); return "Reward cancelled"; })} /> : null}
           {view && tab === "settings" ? <Settings view={view} name={name} api={api} childId={childId} mine={mine} busy={busy} run={run} onPermission={() => { setSheet("permission"); }} guardianLabel={guardianLabel} onSwitchGuardian={onSwitchGuardian} onConnectChild={onConnectChild} /> : null}
@@ -154,13 +156,15 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
 /** The child's account is the first step whenever the payments side can take one and none is added yet. */
 const needsAccount = (v: CapabilitiesView): boolean => !!v.setup?.acceptsAccounts && !v.payee;
 
-function decisionsCount(v: CapabilitiesView, how: How, pending: Mandate | undefined): number {
-  return (needsAccount(v) ? 1 : 0) + (v.pledges ?? []).filter((p) => p.status === "due").length + (v.requests ?? []).filter((r) => r.status === "pending").length + (how === "manual" ? (v.payments ?? []).filter((p) => p.status === "due").length : 0) + (pending ? 1 : 0);
+function decisionsCount(v: CapabilitiesView, how: How, pending: Mandate | undefined, stopped = false): number {
+  return (needsAccount(v) ? 1 : 0) + (stopped ? 1 : 0) + (v.pledges ?? []).filter((p) => p.status === "due").length + (v.requests ?? []).filter((r) => r.status === "pending").length + (how === "manual" ? (v.payments ?? []).filter((p) => p.status === "due").length : 0) + (pending ? 1 : 0);
 }
 
 /* ───────────── Today ───────────── */
 
-function Today({ view, name, total, how, pending, busy, run, afterSend, say, api, childId, onSetup }: { view: CapabilitiesView; name: string; total: number; how: How; pending: Mandate | undefined; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; afterSend: (p: Payment | undefined) => void; say: (m: string, undo?: () => void) => void; api: MoneyApi; childId: string; onSetup: () => void }) {
+function Today({ view, name, total, how, pending, busy, run, afterSend, say, api, childId, onSetup, stopped, onReapprove }: { view: CapabilitiesView; name: string; total: number; how: How; pending: Mandate | undefined; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; afterSend: (p: Payment | undefined) => void; say: (m: string, undo?: () => void) => void; api: MoneyApi; childId: string; onSetup: () => void; stopped: boolean; onReapprove: () => void }) {
+  // Reading the child's own account (the one money is sent to): money landing is spotted, nobody needs to confirm.
+  const reading = view.bank?.status === "active" && !!view.bank.balance && view.bank.matchesAccount !== false;
   const due = (view.pledges ?? []).filter((p) => p.status === "due");
   const asks = (view.requests ?? []).filter((r) => r.status === "pending");
   const toSend = how === "manual" ? (view.payments ?? []).filter((p) => p.status === "due") : [];
@@ -171,13 +175,13 @@ function Today({ view, name, total, how, pending, busy, run, afterSend, say, api
   const lessons = view.capabilities.reduce((s, c) => s + (c.progress?.done ?? 0), 0);
   const open = (view.pledges ?? []).filter((p) => p.status === "open");
   const setupStep = needsAccount(view);
-  const count = (setupStep ? 1 : 0) + due.length + asks.length + toSend.length + (pending ? 1 : 0);
+  const count = (setupStep ? 1 : 0) + (stopped ? 1 : 0) + due.length + asks.length + toSend.length + (pending ? 1 : 0);
   const capOf = (p: Pledge) => view.capabilities.find((c) => c.capability === p.capability);
 
   return (
     <div className="pa-stack">
       <div className="pa-hero">
-        {view.bank?.status === "active" && view.bank.balance ? (
+        {reading && view.bank?.balance ? (
           <>
             <div className="lbl">In {name}'s bank account · {ago(view.bank.balance.asOf)}</div>
             <div className="num"><small>AED</small>{view.bank.balance.amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}</div>
@@ -197,6 +201,14 @@ function Today({ view, name, total, how, pending, busy, run, afterSend, say, api
       </div>
 
       <div className="pa-row" style={{ justifyContent: "space-between" }}><span className="pa-eyebrow">{count ? `Your call · ${count}` : "Your call"}</span>{count ? <span className="pa-small">Takes a minute</span> : null}</div>
+
+      {stopped ? (
+        <article className="pa-decision" style={{ ["--edge" as string]: "#FF9600" }}>
+          <div className="pa-row" style={{ alignItems: "flex-start" }}><img className="art" src={ART.vault} alt="" />
+            <div className="pa-grow"><div className="who">Automatic payments stopped</div><div className="what">Approve {name}'s new account at your bank</div><div className="why">{name}'s account changed, so your bank needs to approve sending to the new one. Until then, you send payments yourself.</div></div></div>
+          <div className="acts"><button type="button" className="pa-btn" onClick={onReapprove}>Turn back on</button></div>
+        </article>
+      ) : null}
 
       {setupStep ? (
         <article className="pa-decision" style={{ ["--edge" as string]: "#58CC02" }}>
@@ -252,7 +264,7 @@ function Today({ view, name, total, how, pending, busy, run, afterSend, say, api
         <div className="pa-card pa-done"><img src={FRANK} alt="Frank" /><div className="pa-h2">All caught up</div><div className="pa-muted" style={{ marginTop: 4 }}>Nothing needs you right now. We'll tell you when {name} finishes something.</div></div>
       ) : null}
 
-      {waiting.length ? <div className="pa-card"><div className="pa-small">Waiting for {name} to confirm: {waiting.map((p) => aed(p.amount)).join(", ")}</div></div> : null}
+      {waiting.length ? <div className="pa-card"><div className="pa-small">{reading ? `Waiting for it to land in ${name}'s account` : `Waiting for ${name} to confirm`}: {waiting.map((p) => aed(p.amount)).join(", ")}</div></div> : null}
 
       <FrankNote name={name} lessons={lessons} saved={saved} next={open[0]} cap={open[0] ? capOf(open[0]) : undefined} />
       {open.length ? <span className="pa-eyebrow" style={{ marginTop: 6 }}>Learning to earning</span> : null}
@@ -417,7 +429,12 @@ function BankBalance({ view, name, api, childId, busy, run }: { view: Capabiliti
   return (
     <div className="pa-card">
       <span className="pa-eyebrow">{name}'s real balance</span>
-      {bank?.status === "active" ? (
+      {bank?.status === "active" && bank.matchesAccount === false && !open ? (
+        <>
+          <div className="pa-err" role="alert">The account you shared at the bank ends {bank.balance?.last4 ?? "in other digits"}, but {name}'s account here ends {view.payee?.last4}. Share the account ending {view.payee?.last4}, so we can spot money landing.</div>
+          <button type="button" className="pa-btn block" style={{ marginTop: 12 }} onClick={() => { setOpen(true); }}>Share the right account</button>
+        </>
+      ) : bank?.status === "active" ? (
         <>
           <div className="pa-row" style={{ marginTop: 8 }}>
             <div className="pa-grow"><b className="din" style={{ fontSize: 15 }}>{bank.balance ? aed(bank.balance.amount) : "Reading…"}</b>

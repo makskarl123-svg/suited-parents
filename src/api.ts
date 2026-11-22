@@ -51,7 +51,8 @@ export interface Mandate { id: string; guardianId: string; childIds: string[]; p
 export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[]; account?: AccountView | null; requests?: TopUpRequest[]; allowance?: Allowance | null; pledges?: Pledge[]; card?: { frozen: boolean } | null; consent?: { givenAt: string; byGuardianId: string; withdrawnAt: string | null } | null; jars?: Jar[]; fund?: FundView | null; payments?: Payment[]; payee?: Payee | null; bank?: BankView | null; setup?: PaymentSetup }
 
 /** The child's real balance, read from their bank with the account holder's read-only permission. */
-export interface BankView { status: "pending" | "active" | "ended" | "failed"; bankName: string | null; expiresAt: string | null; balance: { amount: number; currency: string; asOf: string; last4: string } | null }
+/** matchesAccount false: the account shared at the bank is not the child's account that money is sent to. */
+export interface BankView { status: "pending" | "active" | "ended" | "failed"; bankName: string | null; expiresAt: string | null; balance: { amount: number; currency: string; asOf: string; last4: string } | null; matchesAccount?: boolean }
 export interface Bank { id: string; name: string; logoUrl?: string }
 
 /** What the payments side can do: whether a child's account can be added, and whether automatic payments exist. */
