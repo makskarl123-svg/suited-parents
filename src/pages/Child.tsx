@@ -5,7 +5,7 @@
  * or the engine's; every switch is the parent's.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, type AccountView, type CapabilitiesView, type CapabilityView, type MoneyApi, type Pledge, type PledgeReward, type TopUpRequest, type Transaction, type Verb } from "../api";
+import { ApiError, type AccountView, type CapabilitiesView, type CapabilityView, type Mandate, type MoneyApi, type Payment, type Pledge, type PledgeReward, type TopUpRequest, type Transaction, type Verb } from "../api";
 
 const NAMES: Record<string, string> = { shops: "Shops", online: "Online", transport: "Transport", cash_out: "Cash out", peer_transfer: "Friends", ceiling: "Weekly limit" };
 /** One illustrated object per capability (public/money/art). Sprites stand in until the matched objects are generated. */
@@ -95,14 +95,14 @@ function DoRow({ view, childName, busy, onTopUp, onSetAllowance, onClearAllowanc
   const pok = pAmount !== "" && Number.isFinite(pn) && pn > 0;
   return (
     <div>
-      <div className="do">
-        <button type="button" className={`do-btn ${open === "send" ? "on" : ""}`} disabled={!view.account} onClick={() => { setOpen(open === "send" ? null : "send"); }}><Obj src={ART_GIFT} size={40} /><b>Send money</b><small>To the card, now</small></button>
+      <div className="do" style={view.card ? undefined : { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+        <button type="button" className={`do-btn ${open === "send" ? "on" : ""}`} onClick={() => { setOpen(open === "send" ? null : "send"); }}><Obj src={ART_GIFT} size={40} /><b>Send money</b><small>{view.card ? "To the card, now" : `To ${childName}, now`}</small></button>
         <button type="button" className={`do-btn ${open === "pocket" ? "on" : ""}`} onClick={() => { setOpen(open === "pocket" ? null : "pocket"); }}><Obj src="/money/art/coin-stack.webp" size={40} /><b>Pocket money</b><small>{a ? `AED ${whole(a.amount)} every ${DAYS_LONG[a.dayOfWeek] ?? "week"}` : "Not set"}</small></button>
-        <button type="button" className={`do-btn ${frozen ? "ice" : ""}`} disabled={!view.card || busy === "card"} onClick={() => onFreeze(!frozen)}><Obj src={ART_SNOWFLAKE} size={40} /><b>{frozen ? "Unfreeze" : "Freeze"}</b><small>{frozen ? "Card is frozen" : "One tap, at the bank"}</small></button>
+        {view.card ? <button type="button" className={`do-btn ${frozen ? "ice" : ""}`} disabled={busy === "card"} onClick={() => onFreeze(!frozen)}><Obj src={ART_SNOWFLAKE} size={40} /><b>{frozen ? "Unfreeze" : "Freeze"}</b><small>{frozen ? "Card is frozen" : "One tap, at the bank"}</small></button> : null}
       </div>
       {open === "send" ? (
         <div className="sheet">
-          <div className="small">Goes to {childName}'s account at the bank. Suited never holds it.</div>
+          <div className="small">Goes from your account to {childName}'s. Suited never holds it.</div>
           <div className="actions" style={{ marginTop: 10 }}>
             {[10, 20, 50, 100].map((v) => <button type="button" key={v} className={`pill ${amount === String(v) ? "mint" : "grey"}`} style={{ cursor: "pointer", padding: "10px 14px", fontSize: 14 }} onClick={() => { setAmount(String(v)); }}>AED {v}</button>)}
             <label className="small" style={{ display: "flex", alignItems: "center", gap: 8 }}>AED <input className="limit num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Other" aria-label="Amount in AED" style={{ width: 96 }} /></label>
@@ -116,7 +116,7 @@ function DoRow({ view, childName, busy, onTopUp, onSetAllowance, onClearAllowanc
       ) : null}
       {open === "pocket" ? (
         <div className="sheet">
-          <div className="small">Every week on the day you pick, moved from your account by the bank. Change or stop it any time.</div>
+          <div className="small">Every week on the day you pick, from your account to {childName}'s. Change or stop it any time.</div>
           <div className="actions" style={{ marginTop: 10 }}>
             {[10, 15, 20, 30, 50].map((v) => <button type="button" key={v} className={`pill ${pAmount === String(v) ? "mint" : "grey"}`} style={{ cursor: "pointer", padding: "10px 14px", fontSize: 14 }} onClick={() => { setPAmount(String(v)); }}>AED {v}</button>)}
             <label className="small" style={{ display: "flex", alignItems: "center", gap: 8 }}>AED <input className="limit num" inputMode="decimal" value={pAmount} onChange={(e) => setPAmount(e.target.value)} aria-label="Amount in AED" style={{ width: 90 }} /></label>
@@ -131,6 +131,124 @@ function DoRow({ view, childName, busy, onTopUp, onSetAllowance, onClearAllowanc
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * How money reaches the child. Two ways, both bank to bank, never through Suited:
+ * the parent sends each payment from their own banking app (the child confirms it arrived),
+ * or the parent gives one standing permission at their bank and Suited sends it within their limits.
+ */
+function MoneySetup({ view, childId, childName, mandates, busy, onAddAccount, onStartPermission, onPause }: { view: CapabilitiesView; childId: string; childName: string; mandates: Mandate[]; busy: string | null; onAddAccount: (iban: string, holder: string, type: "Savings" | "CurrentAccount") => void; onStartPermission: (maxPerPayment: number, maxPerWeek: number, weeks: number) => void; onPause: (id: string, paused: boolean) => void }) {
+  const payee = view.payee ?? null;
+  const mine = mandates.filter((m) => m.childIds.includes(childId));
+  const current = [...mine].reverse().find((m) => m.status === "active" || m.status === "paused" || m.status === "pending") ?? null;
+  const [holder, setHolder] = useState(childName);
+  const [iban, setIban] = useState("");
+  const [type, setType] = useState<"Savings" | "CurrentAccount">("Savings");
+  const [perPayment, setPerPayment] = useState("100");
+  const [perWeek, setPerWeek] = useState("200");
+  const [weeks, setWeeks] = useState("12");
+  const [starting, setStarting] = useState(false);
+  const ibanOk = /^[A-Za-z0-9 ]{8,40}$/.test(iban.trim()) && holder.trim().length > 0;
+  const pp = Number(perPayment), pw = Number(perWeek), wk = Number(weeks);
+  const limitsOk = pp > 0 && pw >= pp && Number.isInteger(wk) && wk >= 1 && wk <= 52;
+  const until = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  // Without a payments provider (or with a Money service too old to say), the parent sends each payment themselves.
+  if (!view.setup?.acceptsAccounts) {
+    return (
+      <div className="card">
+        <div className="title">How money reaches {childName}</div>
+        <div className="small">You send each payment from your own banking app to {childName}'s account, then tap "I've sent it" below. {childName} confirms when it arrives. Suited never holds the money.</div>
+      </div>
+    );
+  }
+  return (
+    <div className="card">
+      <div className="title">How money reaches {childName}</div>
+      {!payee ? (
+        <>
+          <div className="small">Add {childName}'s own bank account. Money goes from your account straight to it; Suited never holds it. The details go to our licensed payments partner, and Suited keeps only the last four digits.</div>
+          <input className="limit" value={holder} onChange={(e) => setHolder(e.target.value)} maxLength={70} placeholder="Name on the account" aria-label="Name on the account" style={{ width: "100%", marginTop: 12 }} />
+          <input className="limit num" value={iban} onChange={(e) => setIban(e.target.value)} maxLength={40} placeholder="IBAN, e.g. AE07 0331 2345 6789 0123 456" aria-label="IBAN" style={{ width: "100%", marginTop: 10 }} />
+          <div className="actions" style={{ marginTop: 10 }}>
+            <button type="button" className={`pill ${type === "Savings" ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setType("Savings"); }}>Savings account</button>
+            <button type="button" className={`pill ${type === "CurrentAccount" ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setType("CurrentAccount"); }}>Current account</button>
+          </div>
+          <div className="actions"><button className="btn small" disabled={busy === "payee" || !ibanOk} onClick={() => { onAddAccount(iban, holder.trim(), type); }}>Add {childName}'s account</button></div>
+        </>
+      ) : (
+        <div className="line" style={{ paddingLeft: 0 }}>
+          <span className="ic"><Obj src="/money/art/vault.webp" /></span>
+          <div className="body"><b>{payee.label}</b><small>Ending {payee.last4} · added {dayLabel(payee.registeredAt)}</small></div>
+          <span className="pill mint">Ready</span>
+        </div>
+      )}
+      {payee && !current && view.setup.automatic ? (
+        <>
+          <div className="small" style={{ marginTop: 12 }}>Right now you send each payment yourself from your banking app, and {childName} confirms it arrived. Or give one permission at your bank and Suited sends pocket money and kept pledges for you, within limits you set. You can pause it here or cancel it at your bank any time.</div>
+          {!starting ? <div className="actions"><button className="btn small" onClick={() => { setStarting(true); }}>Send it automatically</button></div> : (
+            <div className="sheet">
+              <div className="actions" style={{ marginTop: 0 }}>
+                <label className="small" style={{ display: "flex", alignItems: "center", gap: 8 }}>Up to AED <input className="limit num" inputMode="decimal" value={perPayment} onChange={(e) => setPerPayment(e.target.value)} aria-label="Most per payment in AED" style={{ width: 80 }} /> a payment</label>
+                <label className="small" style={{ display: "flex", alignItems: "center", gap: 8 }}>AED <input className="limit num" inputMode="decimal" value={perWeek} onChange={(e) => setPerWeek(e.target.value)} aria-label="Most per week in AED" style={{ width: 80 }} /> a week</label>
+                <label className="small" style={{ display: "flex", alignItems: "center", gap: 8 }}>for <input className="limit num" inputMode="numeric" value={weeks} onChange={(e) => setWeeks(e.target.value)} aria-label="Weeks" style={{ width: 60 }} /> weeks</label>
+              </div>
+              <div className="small" style={{ marginTop: 10 }}>Your bank will show these limits and ask you to approve. Nothing can be sent above them.</div>
+              <div className="actions">
+                <button className="btn small" disabled={busy === "mandate" || !limitsOk} onClick={() => { onStartPermission(pp, pw, wk); setStarting(false); }}>Continue to my bank</button>
+                <button className="btn ghost small" onClick={() => { setStarting(false); }}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </>
+      ) : null}
+      {current ? (
+        <div className={`block ${current.status === "active" ? "" : "sun"}`} style={{ marginTop: 12, padding: "12px 14px" }}>
+          <b style={{ fontSize: 14, color: "var(--ink)" }}>{current.status === "active" ? "Automatic payments on" : current.status === "paused" ? "Automatic payments paused" : "Waiting for your bank"}</b>
+          <div className="small" style={{ marginTop: 2 }}>{current.status === "pending" ? "Approve the permission at your bank to switch on automatic payments." : `Up to AED ${whole(current.limits.maxPerPayment)} a payment and AED ${whole(current.limits.maxPerWeek)} a week, until ${until(current.limits.endDate)}.`}</div>
+          <div className="actions" style={{ marginTop: 10 }}>
+            {current.status === "pending" ? <a className="btn small" href={current.authorisationUrl} target="_blank" rel="noreferrer">Approve at my bank</a> : null}
+            {current.status === "active" ? <button className="btn ghost small" disabled={busy === "mandate"} onClick={() => { onPause(current.id, true); }}>Pause</button> : null}
+            {current.status === "paused" ? <button className="btn small" disabled={busy === "mandate"} onClick={() => { onPause(current.id, false); }}>Resume</button> : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Every payment, newest first, with the one thing to do: tell us you sent a due one. */
+function Payments({ view, childName, busy, onSent, automatic }: { view: CapabilitiesView; childName: string; busy: string | null; onSent: (id: string) => void; automatic: boolean }) {
+  const list = (view.payments ?? []).slice(0, 8);
+  const status = (p: Payment): { text: string; pill: string } =>
+    p.status === "confirmed" ? { text: "Arrived", pill: "mint" }
+    : p.status === "failed" ? { text: "Did not go through", pill: "rose" }
+    : p.status === "sent" ? { text: p.parentSaidSentAt ? `Waiting for ${childName}` : "On its way", pill: "sky" }
+    : p.status === "detected" ? { text: "Seen at your bank", pill: "sky" }
+    : { text: "Due", pill: "sun" };
+  return (
+    <div className="card">
+      <div className="title">Payments</div>
+      <div className="small">{automatic ? "Sent by your bank under your permission. Each one shows here until it arrives." : `When one is due, send it from your banking app and tap "I've sent it". ${childName} confirms when it arrives.`}</div>
+      <div style={{ marginTop: 8 }}>
+        {list.map((p) => {
+          const s = status(p);
+          return (
+            <div key={p.id} className="line" style={{ alignItems: "flex-start" }}>
+              <span className="ic"><Obj src={p.kind === "pledge" ? "/money/art/trophy.webp" : p.kind === "allowance" ? "/money/art/coin-stack.webp" : ART_GIFT} /></span>
+              <div className="body">
+                <b>{p.description}</b>
+                <small>AED {whole(p.amount)} · {dayLabel(p.createdAt)}{p.status === "failed" && p.failureReason ? ` · ${p.failureReason}` : ""}</small>
+                {p.status === "due" ? <div className="actions" style={{ marginTop: 8 }}><button className="btn small" disabled={busy === p.id} onClick={() => { onSent(p.id); }}>I've sent it</button></div> : null}
+              </div>
+              <span className={`pill ${s.pill}`}>{s.text}</span>
+            </div>
+          );
+        })}
+        {list.length === 0 ? <div className="line"><div className="body"><small>No payments yet. Pocket money, kept pledges and anything you send appear here.</small></div></div> : null}
+      </div>
     </div>
   );
 }
@@ -211,7 +329,7 @@ function Ask({ c, busy, onAct }: { c: CapabilityView; busy: boolean; onAct: (ver
 }
 
 /** The child asked for money. Yes moves it through the bank; the amount is the child's unless the parent changes it. */
-function MoneyAsk({ r, childName, busy, onDecide }: { r: TopUpRequest; childName: string; busy: boolean; onDecide: (approve: boolean, amount?: number) => void }) {
+function MoneyAsk({ r, childName, busy, onDecide, viaBank }: { r: TopUpRequest; childName: string; busy: boolean; onDecide: (approve: boolean, amount?: number) => void; viaBank: boolean }) {
   const [amount, setAmount] = useState<string>(r.amount !== undefined ? String(r.amount) : "");
   const n = Number(amount);
   const ok = amount !== "" && Number.isFinite(n) && n > 0;
@@ -222,10 +340,10 @@ function MoneyAsk({ r, childName, busy, onDecide }: { r: TopUpRequest; childName
         <div className="words">
           <div className="label">{childName} asked · {dayLabel(r.at)}</div>
           <div className="big" style={{ marginTop: 4 }}>"{r.note}"</div>
-          <p className="meta tint">{r.amount !== undefined ? `${childName} suggested ${r.currency} ${whole(r.amount)}. ` : `${childName} left the amount to you. `}Yes moves it from your account through the bank. Not now changes nothing.</p>
+          <p className="meta tint">{r.amount !== undefined ? `${childName} suggested ${r.currency} ${whole(r.amount)}. ` : `${childName} left the amount to you. `}{viaBank ? "Yes sends it from your account to theirs." : "Yes adds it to Payments for you to send from your banking app."} Not now changes nothing.</p>
           <div className="actions">
             <label className="small tint" style={{ display: "flex", alignItems: "center", gap: 8 }}>AED <input className="limit num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount" aria-label="Amount in AED" /></label>
-            <button className="btn" disabled={busy || !ok} onClick={() => onDecide(true, n)}>Yes, send it</button>
+            <button className="btn" disabled={busy || !ok} onClick={() => onDecide(true, n)}>{viaBank ? "Yes, send it" : "Yes"}</button>
             <button className="btn ghost" disabled={busy} onClick={() => onDecide(false)}>Not now</button>
           </div>
         </div>
@@ -272,7 +390,7 @@ function Recent({ acct, childName }: { acct: AccountView; childName: string }) {
   return (
     <div>
       <div className="title">Recent money moves</div>
-      <div className="small">Every payment, as the bank reports it.</div>
+      <div className="small">{acct.source === "suited-record" ? `${childName}'s money record: what arrived, and what ${childName} moved or spent.` : "Every payment, as the bank reports it."}</div>
       <div className="card flush" style={{ marginTop: 12 }}>
         {acct.transactions.slice(0, 6).map((t) => (
           <div key={t.id} className="line">
@@ -305,7 +423,7 @@ function Recent({ acct, childName }: { acct: AccountView; childName: string }) {
 function rewardLine(p: Pledge, view: CapabilitiesView): string {
   const r = p.reward ?? { kind: "money", destination: "card" };
   if (r.kind === "promise") return r.title;
-  const where = r.destination === "fund" ? "into the 18 Fund" : r.destination === "jar" ? `into the ${view.jars?.find((j) => j.id === r.jarId)?.name ?? "jar"} jar` : "onto the card";
+  const where = r.destination === "fund" ? "into the 18 Fund" : r.destination === "jar" ? `into the ${view.jars?.find((j) => j.id === r.jarId)?.name ?? "jar"} jar` : view.card ? "onto the card" : "to their account";
   return `AED ${whole(p.amount)} ${where}`;
 }
 
@@ -314,7 +432,7 @@ function rewardLine(p: Pledge, view: CapabilitiesView): string {
  * 18 Fund; or a promise in their own words that they keep with one tap once the strand is done. The child
  * sees the promise in those words. Suited never shows a brand and never fulfils a promise.
  */
-function Pledges({ view, childName, busy, onPledge, onCancel, onRelease }: { view: CapabilitiesView; childName: string; busy: boolean; onPledge: (capability: string, amount: number, note: string, reward: PledgeReward) => void; onCancel: (id: string) => void; onRelease: (id: string) => void }) {
+function Pledges({ view, childName, busy, onPledge, onCancel, onRelease }: { view: CapabilitiesView; childName: string; busy: boolean; onPledge: (capability: string, amount: number, note: string, reward: PledgeReward, autoRelease: boolean) => void; onCancel: (id: string) => void; onRelease: (id: string) => void }) {
   const pledges = view.pledges ?? [];
   const due = pledges.filter((p) => p.status === "due");
   const open = pledges.filter((p) => p.status === "open");
@@ -329,6 +447,7 @@ function Pledges({ view, childName, busy, onPledge, onCancel, onRelease }: { vie
   const [amount, setAmount] = useState("50");
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
+  const [auto, setAuto] = useState(false);
   const n = Number(amount);
   const ok = cap !== "" && (kind === "promise" ? title.trim().length > 0 : amount !== "" && Number.isFinite(n) && n > 0 && (dest !== "jar" || jarId !== ""));
   const reward: PledgeReward = kind === "promise" ? { kind: "promise", title: title.trim() } : { kind: "money", destination: dest, ...(dest === "jar" ? { jarId } : {}) };
@@ -336,14 +455,14 @@ function Pledges({ view, childName, busy, onPledge, onCancel, onRelease }: { vie
   return (
     <div className="card">
       <div className="title">Rewards</div>
-      <div className="small">A promise {childName} can see, in your words. Money moves through the bank the moment the strand is done; a promise waits for your tap.</div>
+      <div className="small">A promise {childName} can see, in your words. When the strand is done you keep it with one tap: money is sent to {childName}, a promise is marked kept.</div>
       {due.map((p) => (
         <div key={p.id} className="obj-row block sun" style={{ marginTop: 12, padding: "12px 14px" }}>
           <Obj src="/money/art/trophy.webp" size={48} />
           <div className="words">
             <b style={{ fontSize: 14, color: "var(--ink)" }}>{childName} finished {p.gateName}.</b>
             <div className="small" style={{ color: "var(--sunt)", marginTop: 2 }}>You promised: {rewardLine(p, view)}</div>
-            <div className="actions" style={{ marginTop: 10 }}><button className="btn small" disabled={busy} onClick={() => onRelease(p.id)}>Kept it</button></div>
+            <div className="actions" style={{ marginTop: 10 }}><button className="btn small" disabled={busy} onClick={() => onRelease(p.id)}>{p.reward?.kind === "promise" ? "Kept it" : `Send AED ${whole(p.amount)}`}</button></div>
           </div>
         </div>
       ))}
@@ -351,14 +470,14 @@ function Pledges({ view, childName, busy, onPledge, onCancel, onRelease }: { vie
         <div key={p.id} className="obj-row well" style={{ marginTop: 12, padding: "12px 14px" }}>
           <Obj src={p.reward?.kind === "promise" ? "/money/art/trophy.webp" : p.reward?.destination === "fund" ? "/money/art/vault.webp" : p.reward?.destination === "jar" ? "/money/art/jar-coins.webp" : ART_GIFT} size={48} />
           <div className="words" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-            <div><b style={{ fontSize: 14, color: "var(--ink)" }}>{rewardLine(p, view)}</b><div className="small">when {p.gateName} is done{p.madeBy ? ` · by ${who(p.madeBy)}` : ""}</div>{p.note ? <div className="small">"{p.note}"</div> : null}</div>
+            <div><b style={{ fontSize: 14, color: "var(--ink)" }}>{rewardLine(p, view)}</b><div className="small">when {p.gateName} is done{p.autoRelease ? " · sent automatically" : ""}{p.madeBy ? ` · by ${who(p.madeBy)}` : ""}</div>{p.note ? <div className="small">"{p.note}"</div> : null}</div>
             <button type="button" className="link" disabled={busy} onClick={() => onCancel(p.id)}>Cancel</button>
           </div>
         </div>
       ))}
       {paid.map((p) => (
         <div key={p.id} style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 2px" }}>
-          <div><b style={{ fontSize: 14, color: "var(--ink)" }}>{p.gateName} done</b><div className="small">{p.reward?.kind === "promise" ? "Promise kept" : "Paid by the bank"}{p.paidAt ? ` · ${dayLabel(p.paidAt)}` : ""} · by {who(p.madeBy)}</div></div>
+          <div><b style={{ fontSize: 14, color: "var(--ink)" }}>{p.gateName} done</b><div className="small">{p.reward?.kind === "promise" ? "Promise kept" : "Sent"}{p.paidAt ? ` · ${dayLabel(p.paidAt)}` : ""} · by {who(p.madeBy)}</div></div>
           <span className="num" style={{ fontWeight: 700, color: "var(--treefrog)" }}>{p.reward?.kind === "promise" ? "Kept" : `+${whole(p.amount)}.00`}</span>
         </div>
       ))}
@@ -383,18 +502,19 @@ function Pledges({ view, childName, busy, onPledge, onCancel, onRelease }: { vie
               </div>
               <div className="label" style={{ marginTop: 14 }}>Into</div>
               <div className="actions" style={{ marginTop: 8 }}>
-                <button type="button" className={`pill ${dest === "card" ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setDest("card"); }}>The card</button>
+                <button type="button" className={`pill ${dest === "card" ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setDest("card"); }}>{view.card ? "The card" : `${childName}'s account`}</button>
                 {jars.map((j) => <button type="button" key={j.id} className={`pill ${dest === "jar" && jarId === j.id ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setDest("jar"); setJarId(j.id); }}>{j.name} jar</button>)}
-                <button type="button" className={`pill ${dest === "fund" ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setDest("fund"); }}>The 18 Fund</button>
+                {view.fund ? <button type="button" className={`pill ${dest === "fund" ? "mint" : "grey"}`} style={{ cursor: "pointer", height: 36, padding: "0 14px", fontSize: 13 }} onClick={() => { setDest("fund"); }}>The 18 Fund</button> : null}
               </div>
+              <label className="small" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}><input type="checkbox" checked={auto} onChange={(e) => { setAuto(e.target.checked); }} /> Send it automatically the moment the strand is done</label>
             </>
           ) : (
             <input className="limit" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} placeholder="e.g. Aquarium day, or Pizza night, your pick" aria-label="The promise" style={{ width: "100%", marginTop: 10 }} />
           )}
           <input className="limit" value={note} onChange={(e) => setNote(e.target.value)} maxLength={80} placeholder="A word for the card, e.g. For sticking with it" aria-label="Note" style={{ width: "100%", marginTop: 10 }} />
-          <div className="small" style={{ marginTop: 10 }}>{kind === "promise" ? `${childName} sees your words. When the strand is done you tap Kept it. Nothing moves through the bank.` : "Moves from your account through the bank the moment the strand completes. Suited never holds it."}</div>
+          <div className="small" style={{ marginTop: 10 }}>{kind === "promise" ? `${childName} sees your words. When the strand is done you tap Kept it. No money moves.` : auto ? `Sent from your account to ${childName} the moment the strand completes. Suited never holds it.` : `When the strand is done you send it with one tap. Suited never holds it.`}</div>
           <div className="actions">
-            <button className="btn small" disabled={busy || !ok} onClick={() => { onPledge(cap, kind === "money" ? n : 0, note.trim(), reward); setAdding(false); setNote(""); setTitle(""); }}>{kind === "promise" ? "Promise it" : `Pledge AED ${ok ? whole(n) : "…"}`}</button>
+            <button className="btn small" disabled={busy || !ok} onClick={() => { onPledge(cap, kind === "money" ? n : 0, note.trim(), reward, kind === "money" && auto); setAdding(false); setNote(""); setTitle(""); setAuto(false); }}>{kind === "promise" ? "Promise it" : `Pledge AED ${ok ? whole(n) : "…"}`}</button>
             <button className="btn ghost small" disabled={busy} onClick={() => { setAdding(false); }}>Cancel</button>
           </div>
         </div>
@@ -442,7 +562,7 @@ function Fund({ view, childName, busy, onAdd }: { view: CapabilitiesView; childN
       <Obj src="/money/art/vault.webp" size={64} />
       <div className="words">
         <div className="title">The 18 Fund</div>
-        <div className="small">A high-yield savings account at the bank for {childName} at 18, on the bank's terms. {childName} can see it and cannot touch it.</div>
+        <div className="small">A savings pot at the bank for {childName} at 18, on the bank's terms. {childName} can see it and cannot touch it.</div>
         <div className="money" style={{ fontSize: 30 }}><span className="cur">{f?.currency ?? "AED"}</span>{whole(f?.balance ?? 0)}</div>
         {f && f.contributions.length > 0 ? <div className="small" style={{ marginTop: 6 }}>{f.contributions.slice(0, 3).map((c) => `${c.description === "From the card" ? `From ${childName}` : c.description} · AED ${whole(c.amount)} · ${dayLabel(c.at)}`).join(" · ")}</div> : null}
         {!open ? (
@@ -472,7 +592,7 @@ function Jars({ view, childName }: { view: CapabilitiesView; childName: string }
   return (
     <div className="card">
       <div className="title">{childName}'s jars</div>
-      <div className="small">Pockets inside the account. {childName} names and fills them from the card.</div>
+      <div className="small">{view.card ? `Pockets inside the account. ${childName} names and fills them from the card.` : `Pockets in ${childName}'s money record. ${childName} names them and decides what goes in.`}</div>
       <div style={{ marginTop: 8 }}>
         {jars.map((j) => {
           const pct = j.target && j.target > 0 ? Math.min(100, Math.round((j.balance / j.target) * 100)) : null;
@@ -535,10 +655,13 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  const [mandates, setMandates] = useState<Mandate[]>([]);
 
   const load = useCallback(async () => {
     try { setView(await api.capabilities(childId)); setError(null); }
     catch (e) { setError(e instanceof ApiError && e.status === 403 ? "You are not a guardian of this child." : e instanceof Error ? e.message : "Something went wrong"); }
+    // Standing permissions are the guardian's, not the child's. An older Money service has none: show none.
+    try { setMandates((await api.mandates()).mandates); } catch { setMandates([]); }
   }, [api, childId]);
   useEffect(() => { void load(); }, [load]);
 
@@ -569,7 +692,7 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
     setBusy("top-up");
     try {
       const r = await api.topUp(childId, amount, description);
-      setToast(`AED ${whole(r.transaction.amount)} on its way to ${childName}'s card`);
+      setToast(r.payment.status === "due" ? `AED ${whole(r.payment.amount)} is due: send it from your banking app` : `AED ${whole(r.payment.amount)} on its way to ${childName}`);
       await load();
       setTick((t) => t + 1);
     } catch (e) { setToast(e instanceof Error ? e.message : "Something went wrong"); }
@@ -579,7 +702,7 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
     setBusy(r.id);
     try {
       const out = await api.decideRequest(childId, r.id, approve, amount);
-      setToast(approve && out.transaction ? `Sent AED ${whole(out.transaction.amount)} to ${childName}` : "Told them not now");
+      setToast(approve ? (out.transaction ? `Sent AED ${whole(out.transaction.amount)} to ${childName}` : `Yes: AED ${whole(out.request.amount ?? 0)} is due to ${childName}`) : "Told them not now");
       await load();
       setTick((t) => t + 1);
     } catch (e) { setToast(e instanceof Error ? e.message : "Something went wrong"); }
@@ -594,16 +717,28 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
   };
   const setAllowance = (amount: number, day: number) => run("allowance", async () => { const r = await api.setAllowance(childId, amount, day); return `AED ${whole(r.allowance.amount)} every ${DAYS_LONG[r.allowance.dayOfWeek]}`; });
   const clearAllowance = () => run("allowance", async () => { await api.clearAllowance(childId); return "Pocket money stopped"; });
-  const makePledge = (capability: string, amount: number, note: string, reward: PledgeReward) => run("pledge", async () => { const r = await api.pledge(childId, capability, amount, note || undefined, reward); return reward.kind === "promise" ? `Promised "${reward.title}" for ${r.pledge.gateName}` : `Pledged AED ${whole(r.pledge.amount)} for ${r.pledge.gateName}`; });
-  const releasePledge = (id: string) => run("pledge", async () => { const r = await api.releasePledge(childId, id); return `Kept: ${r.pledge.reward?.kind === "promise" ? r.pledge.reward.title : r.pledge.gateName}`; });
+  const makePledge = (capability: string, amount: number, note: string, reward: PledgeReward, autoRelease: boolean) => run("pledge", async () => { const r = await api.pledge(childId, capability, amount, note || undefined, reward, autoRelease); return reward.kind === "promise" ? `Promised "${reward.title}" for ${r.pledge.gateName}` : `Pledged AED ${whole(r.pledge.amount)} for ${r.pledge.gateName}`; });
+  const releasePledge = (id: string) => run("pledge", async () => { const r = await api.releasePledge(childId, id); return r.pledge.reward?.kind === "promise" ? `Kept: ${r.pledge.reward.title}` : `AED ${whole(r.pledge.amount)} for ${r.pledge.gateName}: see Payments`; });
+  const markSent = (id: string) => run(id, async () => { const r = await api.markSent(childId, id); return r.payment.status === "confirmed" ? `Arrived: ${childName} already confirmed it` : `Noted. ${childName} confirms when it arrives`; });
+  const addAccount = (iban: string, holder: string, type: "Savings" | "CurrentAccount") => run("payee", async () => { const r = await api.setPayee(childId, iban, holder, type); return r.payee ? `${r.payee.label} added, ending ${r.payee.last4}` : "Account added"; });
+  const startPermission = (perPayment: number, perWeek: number, weeks: number) => run("mandate", async () => {
+    const r = await api.createMandate([childId], perPayment, perWeek, weeks);
+    window.open(r.mandate.authorisationUrl, "_blank", "noopener");
+    return "Your bank has opened in a new tab. Approve there, then come back.";
+  });
+  const pauseMandate = (id: string, paused: boolean) => run("mandate", async () => { await api.setMandatePaused(id, paused); return paused ? "Automatic payments paused" : "Automatic payments back on"; });
   const cancelPledge = (id: string) => run("pledge", async () => { await api.cancelPledge(childId, id); return "Pledge cancelled"; });
   const setFrozen = (frozen: boolean) => run("card", async () => { await api.setFrozen(childId, frozen); return frozen ? "Card frozen at the bank" : "Card unfrozen"; });
   const setConsent = (give: boolean) => run("consent", async () => { await api.setConsent(childId, give); return give ? "Consent given again" : "Consent withdrawn"; });
   const addToFund = (amount: number) => run("fund", async () => { const r = await api.contributeFund(childId, amount); return `AED ${whole(r.transaction.amount)} added to ${childName}'s 18 Fund`; });
 
-  const asks = view?.capabilities.filter((c) => c.state === "Requested") ?? [];
+  // Card capabilities only mean something with a card; the V1 ladder (own jars, bigger pledges, projects) replaces them without one.
+  const asks = view?.card != null ? view.capabilities.filter((c) => c.state === "Requested") : [];
   const moneyAsks = view?.requests ?? [];
   const totalAsks = asks.length + moneyAsks.length;
+  const dueCount = (view?.payments ?? []).filter((p) => p.status === "due").length + (view?.pledges ?? []).filter((p) => p.status === "due").length;
+  const hasCard = view?.card != null;
+  const automatic = mandates.some((m) => m.childIds.includes(childId) && m.status === "active");
   const grade = view ? (/(\d{1,2})/.exec(view.gateSet)?.[1] ?? "") : "";
 
   return (
@@ -613,9 +748,9 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
       <div className="head blue">
         <div className="head-row">
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="head-lbl">{childName}{grade ? ` · Grade ${grade}` : ""} · on the card at the bank</div>
-            <div className="head-title">{view?.account ? <Money amount={view.account.balance} currency={view.account.currency} /> : "Card on its way"}</div>
-            <div className="head-sub">{totalAsks > 0 ? `${totalAsks === 1 ? "One thing" : `${totalAsks} things`} waiting. Your call.` : `Everything in your hands. ${childName} earns a capability by finishing the strand that teaches it; nothing changes until you say so.`}</div>
+            <div className="head-lbl">{childName}{grade ? ` · Grade ${grade}` : ""} · {view?.card ? "on the card at the bank" : view?.account?.source === "suited-record" ? `${childName}'s money record` : "in their account"}</div>
+            <div className="head-title">{view?.account ? <Money amount={view.account.balance} currency={view.account.currency} /> : view?.card === undefined || view.card ? "Card on its way" : "Nothing yet"}</div>
+            <div className="head-sub">{totalAsks + dueCount > 0 ? `${totalAsks + dueCount === 1 ? "One thing" : `${totalAsks + dueCount} things`} waiting. Your call.` : `Everything in your hands. ${childName} earns by finishing the lessons that teach it; nothing moves until you say so.`}</div>
           </div>
           <Obj src="/money/art/coin-stack.webp" size={96} style={{ filter: "drop-shadow(0 12px 10px rgba(0,0,0,.18))" }} />
         </div>
@@ -627,20 +762,22 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
         <div className="grid">
           <div className="col">
             {asks.map((c) => <Ask key={c.capability} c={c} busy={busy === c.capability} onAct={(verb, limit) => void act(c.capability, verb, limit)} />)}
-            {moneyAsks.map((r) => <MoneyAsk key={r.id} r={r} childName={childName} busy={busy === r.id} onDecide={(approve, amount) => void decide(r, approve, amount)} />)}
-            <CardHero frozen={view.card?.frozen === true} />
+            {moneyAsks.map((r) => <MoneyAsk key={r.id} r={r} childName={childName} busy={busy === r.id} viaBank={hasCard || automatic} onDecide={(approve, amount) => void decide(r, approve, amount)} />)}
+            {hasCard ? <CardHero frozen={view.card?.frozen === true} /> : null}
             <BalanceHead name={childName} view={view} />
             <DoRow view={view} childName={childName} busy={busy} onTopUp={(a, d) => void topUp(a, d)} onSetAllowance={(a, d) => void setAllowance(a, d)} onClearAllowance={() => void clearAllowance()} onFreeze={(f) => void setFrozen(f)} />
-            <Powers view={view} />
-            <section id="switches"><Switches view={view} busy={busy} onAct={(cap, verb, limit) => void act(cap, verb, limit)} /></section>
-            <div className="says"><img src="/family/frank.webp" alt="" /><div className="bubble"><div className="label">Frank, to {childName}</div><p>Every lesson in a strand gets you closer to the next unlock. Your parents say yes, the bank switches it on.</p></div></div>
+            {!hasCard ? <MoneySetup view={view} childId={childId} childName={childName} mandates={mandates} busy={busy} onAddAccount={(i, h, t) => void addAccount(i, h, t)} onStartPermission={(pp, pw, wk) => void startPermission(pp, pw, wk)} onPause={(id, p) => void pauseMandate(id, p)} /> : null}
+            {!hasCard ? <Payments view={view} childName={childName} busy={busy} onSent={(id) => void markSent(id)} automatic={automatic} /> : null}
+            {hasCard ? <Powers view={view} /> : null}
+            {hasCard ? <section id="switches"><Switches view={view} busy={busy} onAct={(cap, verb, limit) => void act(cap, verb, limit)} /></section> : null}
+            <div className="says"><img src="/family/frank.webp" alt="" /><div className="bubble"><div className="label">Frank, to {childName}</div><p>{hasCard ? "Every lesson in a strand gets you closer to the next unlock. Your parents say yes, the bank switches it on." : "Every lesson in a strand gets you closer to the next unlock. Finish it, and your parents decide what comes next."}</p></div></div>
           </div>
           <aside className="rail">
             <GivenThisMonth view={view} childName={childName} />
-            <Fund view={view} childName={childName} busy={busy === "fund"} onAdd={(a) => void addToFund(a)} />
+            {view.fund ? <Fund view={view} childName={childName} busy={busy === "fund"} onAdd={(a) => void addToFund(a)} /> : null}
             <Jars view={view} childName={childName} />
-            <Limits view={view} childName={childName} />
-            <Pledges view={view} childName={childName} busy={busy === "pledge"} onPledge={(c, a, n, r) => void makePledge(c, a, n, r)} onCancel={(id) => void cancelPledge(id)} onRelease={(id) => void releasePledge(id)} />
+            {hasCard ? <Limits view={view} childName={childName} /> : null}
+            <Pledges view={view} childName={childName} busy={busy === "pledge"} onPledge={(c, a, n, r, auto) => void makePledge(c, a, n, r, auto)} onCancel={(id) => void cancelPledge(id)} onRelease={(id) => void releasePledge(id)} />
             <section id="moves">{view.account ? <Recent acct={view.account} childName={childName} /> : null}</section>
             <ConsentCard view={view} childName={childName} busy={busy === "consent"} onSet={(g) => void setConsent(g)} />
             <section id="history"><History api={api} childId={childId} tick={tick} /></section>
