@@ -43,7 +43,10 @@ export type PaymentStatus = "due" | "sent" | "detected" | "confirmed" | "failed"
 export interface Payment { id: string; childId: string; kind: "allowance" | "pledge" | "ask" | "top-up"; amount: number; currency: string; description: string; fromGuardianId: string; status: PaymentStatus; history: { status: PaymentStatus; at: string; by: string; note?: string }[]; confirmedBy?: "provider" | "bank-read" | "family"; parentSaidSentAt?: string; childSaidReceivedAt?: string; failureReason?: string; createdAt: string }
 
 /** The child's own account, as Suited shows it. The IBAN stays with the payments provider. */
-export interface Payee { label: string; last4: string; registeredAt: string }
+export interface Payee { label: string; last4: string; registeredAt: string; check?: { result: PayeeCheck["result"]; maskedName?: string; bankName?: string; at: string } | null }
+
+/** The bank's answer to who holds an IBAN. `error`: the check could not run. */
+export interface PayeeCheck { result: "match" | "probable" | "review" | "no_match" | "error"; maskedName: string | null; bankName: string | null; active: boolean | null }
 
 /** A standing permission at the parent's bank for Suited to send money to their children's accounts within limits. */
 export interface Mandate { id: string; guardianId: string; childIds: string[]; provider: string; authorisationUrl: string; status: "pending" | "active" | "paused" | "ended" | "failed"; limits: { currency: string; maxPerPayment: number; maxPerWeek: number; startDate: string; endDate: string }; createdAt: string; updatedAt: string }
@@ -51,7 +54,8 @@ export interface Mandate { id: string; guardianId: string; childIds: string[]; p
 export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[]; account?: AccountView | null; requests?: TopUpRequest[]; allowance?: Allowance | null; pledges?: Pledge[]; card?: { frozen: boolean } | null; consent?: { givenAt: string; byGuardianId: string; withdrawnAt: string | null } | null; jars?: Jar[]; fund?: FundView | null; payments?: Payment[]; payee?: Payee | null; bank?: BankView | null; setup?: PaymentSetup }
 
 /** The child's real balance, read from their bank with the account holder's read-only permission. */
-export interface BankView { status: "pending" | "active" | "ended" | "failed"; bankName: string | null; expiresAt: string | null; balance: { amount: number; currency: string; asOf: string; last4: string } | null }
+/** matchesAccount false: the account shared at the bank is not the child's account that money is sent to. */
+export interface BankView { status: "pending" | "active" | "ended" | "failed"; bankName: string | null; expiresAt: string | null; balance: { amount: number; currency: string; asOf: string; last4: string } | null; matchesAccount?: boolean }
 export interface Bank { id: string; name: string; logoUrl?: string }
 
 /** What the payments side can do: whether a child's account can be added, and whether automatic payments exist. */
@@ -126,9 +130,14 @@ export class MoneyApi {
     return this.call(`/children/${encodeURIComponent(childId)}/payments/${encodeURIComponent(paymentId)}/sent`, { method: "POST", body: "{}" });
   }
 
-  /** Add the child's own account with the payments provider. */
-  setPayee(childId: string, iban: string, holderName: string, accountType: "Savings" | "CurrentAccount"): Promise<{ payee: Payee | null }> {
-    return this.call(`/children/${encodeURIComponent(childId)}/payee`, { method: "PUT", body: JSON.stringify({ iban, holderName, accountType }) });
+  /** Add the child's own account with the payments provider. `confirmed`: the parent said yes to a partial name match. */
+  setPayee(childId: string, iban: string, holderName: string, accountType: "Savings" | "CurrentAccount", confirmed = false): Promise<{ payee: Payee | null }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/payee`, { method: "PUT", body: JSON.stringify({ iban, holderName, accountType, ...(confirmed ? { confirmed: true } : {}) }) });
+  }
+
+  /** Confirmation of payee: who the bank says holds this IBAN (masked), and how well it matches the typed name. */
+  checkPayee(childId: string, iban: string, holderName: string): Promise<{ check: PayeeCheck }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/payee/check`, { method: "POST", body: JSON.stringify({ iban, holderName }) });
   }
 
   mandates(): Promise<{ guardianId: string; mandates: Mandate[] }> {
@@ -154,9 +163,12 @@ export class MoneyApi {
     return this.call("/banks");
   }
 
-  /** Ask the child's bank for read-only access to the balance; the link is where the account holder approves it. */
-  connectBankRead(childId: string, bankId: string, email: string): Promise<{ authorisationUrl: string; bank: BankView }> {
-    return this.call(`/children/${encodeURIComponent(childId)}/bank-read`, { method: "POST", body: JSON.stringify({ bankId, email }) });
+  /**
+   * Ask the child's bank for read-only access to the balance; the link is where the account holder approves it.
+   * The email the bank needs is the parent's verified sign-in email, which the Money service takes from Clerk.
+   */
+  connectBankRead(childId: string, bankId: string): Promise<{ authorisationUrl: string; bank: BankView }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/bank-read`, { method: "POST", body: JSON.stringify({ bankId }) });
   }
 
   stopBankRead(childId: string): Promise<{ bank: BankView | null }> {

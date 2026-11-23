@@ -7,7 +7,7 @@
  * is one endpoint in its contract.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, type Bank, type CapabilitiesView, type ChildSummary, type Mandate, type MoneyApi, type Payment, type Pledge, type PledgeReward, type TopUpRequest } from "../api";
+import { ApiError, type Bank, type PayeeCheck, type CapabilitiesView, type ChildSummary, type Mandate, type MoneyApi, type Payment, type Pledge, type PledgeReward, type TopUpRequest } from "../api";
 
 type Tab = "today" | "money" | "rewards" | "settings";
 const ART = { coins: "/money/art/coin-stack.webp", gift: "/money/art/gift.webp", trophy: "/money/art/trophy.webp", jar: "/money/art/jar-coins.webp", vault: "/money/art/vault.webp", piggy: "/money/art/piggy.webp", key: "/money/art/key.webp", metro: "/money/art/metro.webp", padlock: "/money/art/padlock.webp" };
@@ -95,6 +95,8 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
   const paused = mine.find((m) => m.status === "paused");
   const pending = mine.find((m) => m.status === "pending");
   const how: How = active ? "auto" : "manual";
+  // Automatic payments ended without the parent turning them off (the child's account changed): say so, offer one tap back.
+  const stopped = !!view?.setup?.automatic && !!view.payee && !active && !paused && !pending && mine.some((m) => m.status === "ended");
 
   /** After a send: animate the coin when Suited moves it, or point to the copy card when the parent does. */
   const afterSend = (p: Payment | undefined): void => {
@@ -121,12 +123,12 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
             </div>
             <button type="button" className="pa-bell" aria-label="What needs you" onClick={() => { setTab("today"); }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5E6B63" strokeWidth="2.2" strokeLinecap="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0" /></svg>
-              {view && decisionsCount(view, how, pending) > 0 ? <i>{decisionsCount(view, how, pending)}</i> : null}
+              {view && decisionsCount(view, how, pending, stopped) > 0 ? <i>{decisionsCount(view, how, pending, stopped)}</i> : null}
             </button>
           </div>
           {error ? <div className="pa-err">{error}</div> : null}
           {!view && !error ? <div className="pa-card pa-muted">Loading…</div> : null}
-          {view && tab === "today" ? <Today view={view} name={name} total={total} how={how} pending={pending} busy={busy} run={run} afterSend={afterSend} say={say} api={api} childId={childId} onSetup={() => { setTab("settings"); window.scrollTo({ top: 0 }); }} /> : null}
+          {view && tab === "today" ? <Today view={view} name={name} total={total} how={how} pending={pending} busy={busy} run={run} afterSend={afterSend} say={say} api={api} childId={childId} onSetup={() => { setTab("settings"); window.scrollTo({ top: 0 }); }} stopped={stopped} onReapprove={() => { setSheet("permission"); }} /> : null}
           {view && tab === "money" ? <Money view={view} name={name} total={total} how={how} paused={!!paused} flying={flying} onSend={() => { setSheet("send"); }} onPocket={() => { setSheet("pocket"); }} /> : null}
           {view && tab === "rewards" ? <Rewards view={view} name={name} busy={busy} onNew={() => { setSheet("reward"); }} onCancel={(id) => void run(`cancel-${id}`, async () => { await api.cancelPledge(childId, id); return "Reward cancelled"; })} /> : null}
           {view && tab === "settings" ? <Settings view={view} name={name} api={api} childId={childId} mine={mine} busy={busy} run={run} onPermission={() => { setSheet("permission"); }} guardianLabel={guardianLabel} onSwitchGuardian={onSwitchGuardian} onConnectChild={onConnectChild} /> : null}
@@ -154,13 +156,15 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
 /** The child's account is the first step whenever the payments side can take one and none is added yet. */
 const needsAccount = (v: CapabilitiesView): boolean => !!v.setup?.acceptsAccounts && !v.payee;
 
-function decisionsCount(v: CapabilitiesView, how: How, pending: Mandate | undefined): number {
-  return (needsAccount(v) ? 1 : 0) + (v.pledges ?? []).filter((p) => p.status === "due").length + (v.requests ?? []).filter((r) => r.status === "pending").length + (how === "manual" ? (v.payments ?? []).filter((p) => p.status === "due").length : 0) + (pending ? 1 : 0);
+function decisionsCount(v: CapabilitiesView, how: How, pending: Mandate | undefined, stopped = false): number {
+  return (needsAccount(v) ? 1 : 0) + (stopped ? 1 : 0) + (v.pledges ?? []).filter((p) => p.status === "due").length + (v.requests ?? []).filter((r) => r.status === "pending").length + (how === "manual" ? (v.payments ?? []).filter((p) => p.status === "due").length : 0) + (pending ? 1 : 0);
 }
 
 /* ───────────── Today ───────────── */
 
-function Today({ view, name, total, how, pending, busy, run, afterSend, say, api, childId, onSetup }: { view: CapabilitiesView; name: string; total: number; how: How; pending: Mandate | undefined; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; afterSend: (p: Payment | undefined) => void; say: (m: string, undo?: () => void) => void; api: MoneyApi; childId: string; onSetup: () => void }) {
+function Today({ view, name, total, how, pending, busy, run, afterSend, say, api, childId, onSetup, stopped, onReapprove }: { view: CapabilitiesView; name: string; total: number; how: How; pending: Mandate | undefined; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; afterSend: (p: Payment | undefined) => void; say: (m: string, undo?: () => void) => void; api: MoneyApi; childId: string; onSetup: () => void; stopped: boolean; onReapprove: () => void }) {
+  // Reading the child's own account (the one money is sent to): money landing is spotted, nobody needs to confirm.
+  const reading = view.bank?.status === "active" && !!view.bank.balance && view.bank.matchesAccount !== false;
   const due = (view.pledges ?? []).filter((p) => p.status === "due");
   const asks = (view.requests ?? []).filter((r) => r.status === "pending");
   const toSend = how === "manual" ? (view.payments ?? []).filter((p) => p.status === "due") : [];
@@ -171,13 +175,13 @@ function Today({ view, name, total, how, pending, busy, run, afterSend, say, api
   const lessons = view.capabilities.reduce((s, c) => s + (c.progress?.done ?? 0), 0);
   const open = (view.pledges ?? []).filter((p) => p.status === "open");
   const setupStep = needsAccount(view);
-  const count = (setupStep ? 1 : 0) + due.length + asks.length + toSend.length + (pending ? 1 : 0);
+  const count = (setupStep ? 1 : 0) + (stopped ? 1 : 0) + due.length + asks.length + toSend.length + (pending ? 1 : 0);
   const capOf = (p: Pledge) => view.capabilities.find((c) => c.capability === p.capability);
 
   return (
     <div className="pa-stack">
       <div className="pa-hero">
-        {view.bank?.status === "active" && view.bank.balance ? (
+        {reading && view.bank?.balance ? (
           <>
             <div className="lbl">In {name}'s bank account · {ago(view.bank.balance.asOf)}</div>
             <div className="num"><small>AED</small>{view.bank.balance.amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}</div>
@@ -197,6 +201,14 @@ function Today({ view, name, total, how, pending, busy, run, afterSend, say, api
       </div>
 
       <div className="pa-row" style={{ justifyContent: "space-between" }}><span className="pa-eyebrow">{count ? `Your call · ${count}` : "Your call"}</span>{count ? <span className="pa-small">Takes a minute</span> : null}</div>
+
+      {stopped ? (
+        <article className="pa-decision" style={{ ["--edge" as string]: "#FF9600" }}>
+          <div className="pa-row" style={{ alignItems: "flex-start" }}><img className="art" src={ART.vault} alt="" />
+            <div className="pa-grow"><div className="who">Automatic payments stopped</div><div className="what">Approve {name}'s new account at your bank</div><div className="why">{name}'s account changed, so your bank needs to approve sending to the new one. Until then, you send payments yourself.</div></div></div>
+          <div className="acts"><button type="button" className="pa-btn" onClick={onReapprove}>Turn back on</button></div>
+        </article>
+      ) : null}
 
       {setupStep ? (
         <article className="pa-decision" style={{ ["--edge" as string]: "#58CC02" }}>
@@ -252,7 +264,7 @@ function Today({ view, name, total, how, pending, busy, run, afterSend, say, api
         <div className="pa-card pa-done"><img src={FRANK} alt="Frank" /><div className="pa-h2">All caught up</div><div className="pa-muted" style={{ marginTop: 4 }}>Nothing needs you right now. We'll tell you when {name} finishes something.</div></div>
       ) : null}
 
-      {waiting.length ? <div className="pa-card"><div className="pa-small">Waiting for {name} to confirm: {waiting.map((p) => aed(p.amount)).join(", ")}</div></div> : null}
+      {waiting.length ? <div className="pa-card"><div className="pa-small">{reading ? `Waiting for it to land in ${name}'s account` : `Waiting for ${name} to confirm`}: {waiting.map((p) => aed(p.amount)).join(", ")}</div></div> : null}
 
       <FrankNote name={name} lessons={lessons} saved={saved} next={open[0]} cap={open[0] ? capOf(open[0]) : undefined} />
       {open.length ? <span className="pa-eyebrow" style={{ marginTop: 6 }}>Learning to earning</span> : null}
@@ -403,10 +415,9 @@ function Rewards({ view, name, busy, onNew, onCancel }: { view: CapabilitiesView
  * The child's real balance: read-only access at the child's bank, approved once by the account holder.
  * Suited can never move money with it. Shows the balance on Today and spots money landing.
  */
-function BankBalance({ view, name, api, childId, busy, run, guardianLabel }: { view: CapabilitiesView; name: string; api: MoneyApi; childId: string; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; guardianLabel: string }) {
+function BankBalance({ view, name, api, childId, busy, run }: { view: CapabilitiesView; name: string; api: MoneyApi; childId: string; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void> }) {
   const [banks, setBanks] = useState<Bank[] | null>(null);
   const [bankId, setBankId] = useState("");
-  const [email, setEmail] = useState(guardianLabel.includes("@") ? guardianLabel : "");
   const [open, setOpen] = useState(false);
   const bank = view.bank ?? null;
   const live = bank && (bank.status === "active" || bank.status === "pending");
@@ -418,7 +429,15 @@ function BankBalance({ view, name, api, childId, busy, run, guardianLabel }: { v
   return (
     <div className="pa-card">
       <span className="pa-eyebrow">{name}'s real balance</span>
-      {bank?.status === "active" ? (
+      {bank?.status === "active" && bank.matchesAccount === false && !open ? (
+        <>
+          <div className="pa-check warn"><b>We're looking at the wrong account</b><span>We send {name}'s money to the account ending {view.payee?.last4}, but when you approved at your bank you let us see the account ending {bank.balance?.last4 ?? "in other digits"}. Payments still work. To show {name}'s real balance, approve again and tick the account ending {view.payee?.last4}.</span></div>
+          <div className="pa-row" style={{ gap: 8, marginTop: 12 }}>
+            <button type="button" className="pa-btn small" onClick={() => { setOpen(true); }}>Share the right account</button>
+            <button type="button" className="pa-btn ghost small" disabled={busy === "bank"} onClick={() => void run("bank", async () => { await api.stopBankRead(childId); return `Stopped reading. Remove the access for good in your banking app.`; })}>Stop reading</button>
+          </div>
+        </>
+      ) : bank?.status === "active" ? (
         <>
           <div className="pa-row" style={{ marginTop: 8 }}>
             <div className="pa-grow"><b className="din" style={{ fontSize: 15 }}>{bank.balance ? aed(bank.balance.amount) : "Reading…"}</b>
@@ -444,10 +463,9 @@ function BankBalance({ view, name, api, childId, busy, run, guardianLabel }: { v
             {banks === null ? <div className="pa-small">Loading banks…</div> : banks.length === 0 ? <div className="pa-small">No banks are available right now.</div>
               : banks.map((b) => <button key={b.id} type="button" role="radio" aria-checked={bankId === b.id} className="pa-choice" onClick={() => { setBankId(b.id); }}><div className="pa-grow"><b>{b.name}</b></div></button>)}
           </div>
-          <div className="pa-field"><label htmlFor="bank-email">Your email</label><input id="bank-email" type="email" value={email} onChange={(e) => { setEmail(e.target.value); }} maxLength={50} placeholder="you@example.com" /></div>
-          <div className="pa-small" style={{ marginTop: 6 }}>The bank asks for it. Suited doesn't use it for anything else.</div>
-          <button type="button" className="pa-btn block" style={{ marginTop: 14 }} disabled={busy === "bank" || !bankId || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)} onClick={() => void run("bank", async () => {
-            const r = await api.connectBankRead(childId, bankId, email);
+          <div className="pa-small" style={{ marginTop: 10 }}>Your bank receives the email you signed in to Suited with, so it knows the request is yours. Nothing else about you or {name}.</div>
+          <button type="button" className="pa-btn block" style={{ marginTop: 14 }} disabled={busy === "bank" || !bankId} onClick={() => void run("bank", async () => {
+            const r = await api.connectBankRead(childId, bankId);
             setOpen(false);
             window.open(r.authorisationUrl, "_blank", "noopener");
             return "Your bank has opened in a new tab. Approve read-only access there.";
@@ -464,6 +482,13 @@ function Settings({ view, name, api, childId, mine, busy, run, onPermission, gua
   const [iban, setIban] = useState("");
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [changing, setChanging] = useState(false);
+  // Confirmation of payee: the bank's (masked) holder name, checked before the account is added.
+  const [check, setCheck] = useState<PayeeCheck | null>(null);
+  const addAccount = (confirmed: boolean) => run("payee", async () => {
+    const r = await api.setPayee(childId, iban, holder.trim(), "Savings", confirmed);
+    setChanging(false); setCheck(null);
+    return r.payee ? `${r.payee.label} added, ending ${r.payee.last4}` : "Account added";
+  });
   const current = [...mine].reverse().find((m) => m.status === "active" || m.status === "paused" || m.status === "pending");
   const setup = view.setup;
   const consent = view.consent ?? null;
@@ -474,15 +499,34 @@ function Settings({ view, name, api, childId, mine, busy, run, onPermission, gua
       <div className="pa-card">
         <span className="pa-eyebrow">{name}'s account</span>
         {view.payee && !changing ? (
-          <div className="pa-lrow" style={{ border: 0 }}><div className="ic"><img src={ART.vault} alt="" /></div><div className="pa-grow"><b>{view.payee.label}</b><small>Ending {view.payee.last4} · money goes straight here</small></div>
+          <div className="pa-lrow" style={{ border: 0 }}><div className="ic"><img src={ART.vault} alt="" /></div><div className="pa-grow"><b>{view.payee.label}</b><small>Ending {view.payee.last4}{view.payee.check?.maskedName ? ` · held by ${view.payee.check.maskedName}` : ""}{view.payee.check?.bankName ? ` at ${view.payee.check.bankName}` : ""} · money goes straight here</small></div>
             {setup?.acceptsAccounts ? <button type="button" className="pa-btn ghost small" onClick={() => { setIban(""); setChanging(true); }}>Change</button> : <span className="pa-chip ok">Ready</span>}</div>
         ) : setup?.acceptsAccounts ? (
           <>
             <div className="pa-muted" style={{ marginTop: 6 }}>{name}'s own savings account, so money goes straight to {name}. Suited keeps only the last four digits.</div>
             {changing && current ? <div className="pa-small" style={{ marginTop: 8 }}>Automatic payments stop when you change the account. You approve them again for the new one.</div> : null}
-            <div className="pa-field"><label htmlFor="acct-name">Name on the account</label><input id="acct-name" value={holder} onChange={(e) => { setHolder(e.target.value); }} maxLength={70} /></div>
-            <div className="pa-field"><label htmlFor="acct-iban">IBAN</label><input id="acct-iban" value={iban} onChange={(e) => { setIban(e.target.value); }} maxLength={40} placeholder="AE07 0331 2345 6789 0123 456" /></div>
-            <button type="button" className="pa-btn block" style={{ marginTop: 14 }} disabled={busy === "payee" || !/^[A-Za-z0-9 ]{8,40}$/.test(iban.trim()) || !holder.trim()} onClick={() => void run("payee", async () => { const r = await api.setPayee(childId, iban, holder.trim(), "Savings"); setChanging(false); return r.payee ? `${r.payee.label} added, ending ${r.payee.last4}` : "Account added"; })}>{changing ? "Use this account" : "Add account"}</button>
+            <div className="pa-field"><label htmlFor="acct-name">Name on the account</label><input id="acct-name" value={holder} onChange={(e) => { setHolder(e.target.value); setCheck(null); }} maxLength={70} /></div>
+            <div className="pa-field"><label htmlFor="acct-iban">IBAN</label><input id="acct-iban" value={iban} onChange={(e) => { setIban(e.target.value); setCheck(null); }} maxLength={40} placeholder="AE07 0331 2345 6789 0123 456" /></div>
+            {!check ? (
+              <button type="button" className="pa-btn block" style={{ marginTop: 14 }} disabled={busy === "payee" || !/^[A-Za-z0-9 ]{8,40}$/.test(iban.trim()) || !holder.trim()} onClick={() => void run("payee", async () => { setCheck((await api.checkPayee(childId, iban, holder.trim())).check); })}>Check account</button>
+            ) : check.result === "match" || check.result === "probable" ? (
+              <>
+                <div className="pa-check ok"><b>{check.maskedName ?? holder}</b><span>Account holder at {check.bankName ?? "the bank"}{check.result === "probable" ? " · close match" : " · name matches"}</span></div>
+                <button type="button" className="pa-btn block" style={{ marginTop: 12 }} disabled={busy === "payee"} onClick={() => void addAccount(false)}>{changing ? "Use this account" : "Add account"}</button>
+              </>
+            ) : check.result === "review" ? (
+              <>
+                <div className="pa-check warn"><b>{check.maskedName ?? "Name partly matches"}</b><span>Only partly matches "{holder}" at {check.bankName ?? "the bank"}. Make sure this is {name}'s account.</span></div>
+                <button type="button" className="pa-btn block" style={{ marginTop: 12 }} disabled={busy === "payee"} onClick={() => void addAccount(true)}>Yes, it's {name}'s account</button>
+              </>
+            ) : check.result === "no_match" ? (
+              <div className="pa-check bad"><b>{check.maskedName ?? "Someone else's account"}</b><span>This account is in someone else's name at {check.bankName ?? "the bank"}. Check the IBAN and try again.</span></div>
+            ) : (
+              <>
+                <div className="pa-check"><b>We couldn't check the name right now</b><span>The bank didn't answer. You can add the account anyway; check the IBAN carefully first.</span></div>
+                <button type="button" className="pa-btn ghost block" style={{ marginTop: 12 }} disabled={busy === "payee"} onClick={() => void addAccount(false)}>Add anyway</button>
+              </>
+            )}
             {changing ? <button type="button" className="pa-btn ghost block" style={{ marginTop: 8 }} onClick={() => { setChanging(false); }}>Keep the current account</button> : null}
           </>
         ) : <div className="pa-muted" style={{ marginTop: 6 }}>You send each payment from your own banking app to {name}'s account, and {name} confirms it arrived.</div>}
@@ -506,7 +550,7 @@ function Settings({ view, name, api, childId, mine, busy, run, onPermission, gua
         </div>
       ) : null}
 
-      {setup?.readsBalances ? <BankBalance view={view} name={name} api={api} childId={childId} busy={busy} run={run} guardianLabel={guardianLabel} /> : null}
+      {setup?.readsBalances ? <BankBalance view={view} name={name} api={api} childId={childId} busy={busy} run={run} /> : null}
 
       <div className="pa-card">
         <span className="pa-eyebrow">Learning and money</span>
