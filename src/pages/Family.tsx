@@ -1,21 +1,28 @@
 /**
- * Suited Money for parents, rebuilt on the approved Premium design
- * (prototype: claude.ai/artifact/Y7XLgGuXJ7zdfSay1Sk22C). Four tabs: Today
- * (only what needs the parent), Money (how it reaches the child, jars,
- * payments), Rewards (pledges and progress), Settings (account, how payments
- * are sent, consent). Every number comes from the Money service; every action
- * is one endpoint in its contract.
+ * Suited Money for parents, on the colour pass approved 23 Nov 2026
+ * (prototype: claude.ai/artifact/5c2of5yx3DjHyARD4ezQbs). Four tabs and a Give
+ * button: Today (the balance, what needs the parent, what happened), Money (how
+ * it reaches the child, jars, payments), Rewards (promises and progress),
+ * Settings (account, how payments are sent, consent). Every card says whether
+ * the child sees it. Every number comes from the Money service; every action is
+ * one endpoint in its contract.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, type Bank, type PayeeCheck, type CapabilitiesView, type ChildSummary, type Mandate, type MoneyApi, type Payment, type Pledge, type PledgeReward, type TopUpRequest } from "../api";
+import { aed, Amt, Dirham, Txt } from "../dirham";
 
 type Tab = "today" | "money" | "rewards" | "settings";
-const ART = { coins: "/money/art/coin-stack.webp", gift: "/money/art/gift.webp", trophy: "/money/art/trophy.webp", jar: "/money/art/jar-coins.webp", vault: "/money/art/vault.webp", piggy: "/money/art/piggy.webp", key: "/money/art/key.webp", metro: "/money/art/metro.webp", padlock: "/money/art/padlock.webp" };
+const ART = { coins: "/money/art/coin-stack.webp", gift: "/money/art/gift.webp", trophy: "/money/art/trophy.webp", jar: "/money/art/jar-coins.webp", vault: "/money/art/vault.webp", piggy: "/money/art/piggy.webp", key: "/money/art/key.webp", metro: "/money/art/metro.webp", padlock: "/money/art/padlock.webp", headphones: "/money/art/headphones.webp" };
 const FRANK = "/family/frank.webp";
 const KID_COLOURS = ["#FF9600", "#CE82FF", "#1CB0F6", "#58CC02"];
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const JAR_COLOURS = ["#FF9600", "#CE82FF", "#58CC02", "#FFC800"];
-const aed = (n: number): string => `AED ${Math.round(n * 100) % 100 === 0 ? Math.round(n).toLocaleString("en-US") : n.toFixed(2)}`;
+/** Each reward keeps one solid colour wherever it appears (Today, Rewards), picked from its id. */
+const PANELS = ["#1CB0F6", "#FF9600", "#CE82FF", "#58CC02", "#2B70C9", "#FFC800"];
+const panelFor = (key: string): string => { let h = 0; for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return PANELS[h % PANELS.length] ?? "#1CB0F6"; };
+/** The art tile on a colour panel: yellow, unless the panel already is. */
+const tileFor = (panel: string): string => (panel === "#FFC800" ? "#1CB0F6" : "#FFC800");
+const artFor = (p: Pledge): string => (p.reward?.kind === "promise" ? ART.gift : p.status === "open" ? ART.jar : ART.trophy);
 const day = (iso: string): string => {
   const d = new Date(iso); if (Number.isNaN(d.getTime())) return "";
   const a = new Date(); a.setHours(0, 0, 0, 0); const b = new Date(d); b.setHours(0, 0, 0, 0);
@@ -44,7 +51,8 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; undo?: () => void } | null>(null);
-  const [sheet, setSheet] = useState<null | "send" | "pocket" | "reward" | "permission">(null);
+  const [sheet, setSheet] = useState<null | "give" | "send" | "pocket" | "reward" | "permission">(null);
+  const [detail, setDetail] = useState<string | null>(null);
   const [celebration, setCelebration] = useState<{ amount: number; line: string } | null>(null);
   const [flying, setFlying] = useState(0);
   const seen = useRef<Map<string, Payment["status"]>>(new Map());
@@ -52,6 +60,7 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
 
   const child = kids.find((k) => k.childId === childId) ?? kids[0];
   const name = child?.displayName || "Your child";
+  const colour = KID_COLOURS[Math.max(0, kids.findIndex((k) => k.childId === childId)) % KID_COLOURS.length] ?? "#FF9600";
 
   const load = useCallback(async () => {
     if (!childId) return;
@@ -122,19 +131,21 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
               ))}
             </div>
             <button type="button" className="pa-bell" aria-label="What needs you" onClick={() => { setTab("today"); }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5E6B63" strokeWidth="2.2" strokeLinecap="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0" /></svg>
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#111A14" strokeWidth="2.2" strokeLinecap="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0" /></svg>
               {view && decisionsCount(view, how, pending, stopped) > 0 ? <i>{decisionsCount(view, how, pending, stopped)}</i> : null}
             </button>
           </div>
           {error ? <div className="pa-err">{error}</div> : null}
           {!view && !error ? <div className="pa-card pa-muted">Loading…</div> : null}
-          {view && tab === "today" ? <Today view={view} name={name} total={total} how={how} pending={pending} busy={busy} run={run} afterSend={afterSend} say={say} api={api} childId={childId} onSetup={() => { setTab("settings"); window.scrollTo({ top: 0 }); }} stopped={stopped} onReapprove={() => { setSheet("permission"); }} /> : null}
-          {view && tab === "money" ? <Money view={view} name={name} total={total} how={how} paused={!!paused} flying={flying} onSend={() => { setSheet("send"); }} onPocket={() => { setSheet("pocket"); }} /> : null}
-          {view && tab === "rewards" ? <Rewards view={view} name={name} busy={busy} onNew={() => { setSheet("reward"); }} onCancel={(id) => void run(`cancel-${id}`, async () => { await api.cancelPledge(childId, id); return "Reward cancelled"; })} /> : null}
+          {view && tab === "today" ? <Today view={view} name={name} colour={colour} total={total} how={how} pending={pending} busy={busy} run={run} afterSend={afterSend} say={say} api={api} childId={childId} onSetup={() => { setTab("settings"); window.scrollTo({ top: 0 }); }} stopped={stopped} onReapprove={() => { setSheet("permission"); }} onAllPayments={() => { setTab("money"); window.scrollTo({ top: 0 }); }} /> : null}
+          {view && tab === "money" ? <Money view={view} name={name} colour={colour} total={total} how={how} paused={!!paused} flying={flying} onSend={() => { setSheet("send"); }} onPocket={() => { setSheet("pocket"); }} /> : null}
+          {view && tab === "rewards" ? <Rewards view={view} name={name} onNew={() => { setSheet("reward"); }} onOpen={setDetail} /> : null}
           {view && tab === "settings" ? <Settings view={view} name={name} api={api} childId={childId} mine={mine} busy={busy} run={run} onPermission={() => { setSheet("permission"); }} guardianLabel={guardianLabel} onSwitchGuardian={onSwitchGuardian} onConnectChild={onConnectChild} /> : null}
         </main>
         <nav className="pa-tabs" aria-label="Sections">
-          {(["today", "money", "rewards", "settings"] as Tab[]).map((t) => (
+          {(["today", "money", "give", "rewards", "settings"] as const).map((t) => t === "give" ? (
+            <div key={t} className="pa-givewrap"><button type="button" className="pa-give" aria-label="Give" disabled={!view} onClick={() => { setSheet("give"); }}><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg></button>Give</div>
+          ) : (
             <button key={t} type="button" className="pa-tab" aria-current={tab === t ? "page" : undefined} onClick={() => { setTab(t); window.scrollTo({ top: 0 }); }}>
               <TabIcon t={t} />{t === "today" ? "Today" : t === "money" ? "Money" : t === "rewards" ? "Rewards" : "Settings"}
             </button>
@@ -142,12 +153,14 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
         </nav>
       </div>
 
+      {sheet === "give" && view ? <GiveSheet view={view} name={name} how={how} onClose={() => { setSheet(null); }} onPick={(s) => { setSheet(s); }} /> : null}
+      {detail && view ? <RewardDetail view={view} name={name} id={detail} guardianLabel={guardianLabel} busy={busy} onClose={() => { setDetail(null); }} onCancel={(id) => { setDetail(null); void run(`cancel-${id}`, async () => { await api.cancelPledge(childId, id); return "Reward cancelled"; }); }} /> : null}
       {sheet === "send" && view ? <SendSheet name={name} how={how} onClose={() => { setSheet(null); }} onSend={(amount, note) => { setSheet(null); void run("send", async () => { const r = await api.topUp(childId, amount, note || `From ${guardianLabel}`); afterSend(r.payment); }); }} /> : null}
       {sheet === "pocket" && view ? <PocketSheet view={view} onClose={() => { setSheet(null); }} onSave={(amount, d) => { setSheet(null); void run("pocket", async () => { await api.setAllowance(childId, amount, d); return `${aed(amount)} every ${DAYS[d] ?? "week"}`; }); }} onStop={() => { setSheet(null); void run("pocket", async () => { await api.clearAllowance(childId); return "Pocket money stopped"; }); }} /> : null}
       {sheet === "reward" && view ? <RewardSheet view={view} name={name} onClose={() => { setSheet(null); }} onSave={(cap, amount, reward, auto) => { setSheet(null); setTab("rewards"); void run("reward", async () => { const r = await api.pledge(childId, cap, amount, undefined, reward, auto); return `${name} can see it now: ${reward.kind === "promise" ? reward.title : aed(r.pledge.amount)} for ${r.pledge.gateName}`; }); }} /> : null}
       {sheet === "permission" && view ? <PermissionSheet name={name} onClose={() => { setSheet(null); }} onStart={(pp, pw, wk) => { setSheet(null); void run("mandate", async () => { const r = await api.createMandate([childId], pp, pw, wk); window.open(r.mandate.authorisationUrl, "_blank", "noopener"); return "Your bank has opened in a new tab. Approve there, then come back."; }); }} /> : null}
 
-      {toast ? <div className="pa-toast" role="status"><span className="pa-grow">{toast.msg}</span>{toast.undo ? <button type="button" onClick={() => { toast.undo?.(); setToast(null); }}>Undo</button> : null}</div> : null}
+      {toast ? <div className="pa-toast" role="status"><span className="pa-grow"><Txt s={toast.msg} /></span>{toast.undo ? <button type="button" onClick={() => { toast.undo?.(); setToast(null); }}>Undo</button> : null}</div> : null}
       {celebration ? <Celebrate name={name} amount={celebration.amount} line={celebration.line} onClose={() => { setCelebration(null); }} /> : null}
     </div>
   );
@@ -162,13 +175,32 @@ function decisionsCount(v: CapabilitiesView, how: How, pending: Mandate | undefi
 
 /* ───────────── Today ───────────── */
 
-function Today({ view, name, total, how, pending, busy, run, afterSend, say, api, childId, onSetup, stopped, onReapprove }: { view: CapabilitiesView; name: string; total: number; how: How; pending: Mandate | undefined; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; afterSend: (p: Payment | undefined) => void; say: (m: string, undo?: () => void) => void; api: MoneyApi; childId: string; onSetup: () => void; stopped: boolean; onReapprove: () => void }) {
+const Eye = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>;
+const Lock = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>;
+
+/** Who sees a card: the child, or only the parent. Then when, then anything on the right. */
+function Seen({ name, child, when, end }: { name: string; child: boolean; when?: string; end?: React.ReactNode }) {
+  return <div className="pa-meta">{child ? <Eye /> : <Lock />}{child ? `${name} sees this` : "Only you"}{when ? ` · ${when}` : ""}{end ? <span className="end">{end}</span> : null}</div>;
+}
+
+/** A colour panel: the art on a tilted tile, the thread's progress on a tilted card. */
+function Panel({ colour, art, title, line, done, total, height }: { colour: string; art: string; title: string; line: string; done: number; total: number; height?: number }) {
+  return (
+    <div className="pa-panel" style={{ background: colour, ...(height ? { height } : {}) }} aria-hidden="true">
+      <div className="pa-tile art" style={{ background: tileFor(colour) }}><img src={art} alt="" /></div>
+      <div className="pa-tile card"><b>{title}</b><small>{line}</small>{total ? <div className="pa-dots">{Array.from({ length: Math.min(total, 12) }, (_, i) => <i key={i} className={i < Math.round((done / total) * Math.min(total, 12)) ? "on" : ""} />)}</div> : null}</div>
+    </div>
+  );
+}
+
+function Today({ view, name, colour, total, how, pending, busy, run, afterSend, say, api, childId, onSetup, stopped, onReapprove, onAllPayments }: { view: CapabilitiesView; name: string; colour: string; total: number; how: How; pending: Mandate | undefined; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; afterSend: (p: Payment | undefined) => void; say: (m: string, undo?: () => void) => void; api: MoneyApi; childId: string; onSetup: () => void; stopped: boolean; onReapprove: () => void; onAllPayments: () => void }) {
   // Reading the child's own account (the one money is sent to): money landing is spotted, nobody needs to confirm.
   const reading = view.bank?.status === "active" && !!view.bank.balance && view.bank.matchesAccount !== false;
   const due = (view.pledges ?? []).filter((p) => p.status === "due");
   const asks = (view.requests ?? []).filter((r) => r.status === "pending");
   const toSend = how === "manual" ? (view.payments ?? []).filter((p) => p.status === "due") : [];
   const waiting = (view.payments ?? []).filter((p) => p.status === "sent" && p.parentSaidSentAt);
+  const recent = [...(view.payments ?? [])].filter((p) => p.status !== "due").sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 3);
   const weekAgo = Date.now() - 7 * 86_400_000;
   const inThisWeek = (view.payments ?? []).filter((p) => p.status === "confirmed" && new Date(p.createdAt).getTime() > weekAgo).reduce((s, p) => s + p.amount, 0);
   const saved = (view.jars ?? []).reduce((s, j) => s + j.balance, 0);
@@ -181,68 +213,67 @@ function Today({ view, name, total, how, pending, busy, run, afterSend, say, api
   return (
     <div className="pa-stack">
       <div className="pa-hero">
-        {reading && view.bank?.balance ? (
-          <>
-            <div className="lbl">In {name}'s bank account · {ago(view.bank.balance.asOf)}</div>
-            <div className="num"><small>AED</small>{view.bank.balance.amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}</div>
-          </>
-        ) : (
-          <>
-            <div className="lbl">{name}'s money</div>
-            <div className="num"><small>AED</small>{total.toLocaleString("en-US", { maximumFractionDigits: 2 })}</div>
-          </>
-        )}
-        <div className="stats">
-          <div className="stat"><b>+{Math.round(inThisWeek)}</b><span>this week</span></div>
-          <div className="stat"><b>{Math.round(saved)}</b><span>in jars</span></div>
-          <div className="stat"><b>{lessons}</b><span>lessons</span></div>
+        <img className="art" src={ART.coins} alt="" />
+        <div className="lbl">{reading && view.bank?.balance ? `In ${name}'s bank account · ${ago(view.bank.balance.asOf)}` : `${name}'s money`}</div>
+        <div className="num"><Amt n={reading && view.bank?.balance ? view.bank.balance.amount : total} /></div>
+        <div className="pills">
+          <span className="pill"><Amt n={Math.round(inThisWeek)} plus />&nbsp;this week</span>
+          <span className="pill"><Amt n={Math.round(saved)} />&nbsp;saved</span>
+          <span className="pill">{lessons} {lessons === 1 ? "lesson" : "lessons"}</span>
         </div>
-        <div className="pa-trust"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>Bank to bank through a licensed provider · Suited never holds money</div>
+        <div className="pa-trust"><Lock />Bank to bank · Suited never holds money</div>
       </div>
 
-      <div className="pa-row" style={{ justifyContent: "space-between" }}><span className="pa-eyebrow">{count ? `Your call · ${count}` : "Your call"}</span>{count ? <span className="pa-small">Takes a minute</span> : null}</div>
+      <div className="pa-section"><span>{count ? `Your call · ${count}` : "Your call"}</span>{count ? <small>Takes a minute</small> : null}</div>
 
       {stopped ? (
-        <article className="pa-decision" style={{ ["--edge" as string]: "#FF9600" }}>
-          <div className="pa-row" style={{ alignItems: "flex-start" }}><img className="art" src={ART.vault} alt="" />
-            <div className="pa-grow"><div className="who">Automatic payments stopped</div><div className="what">Approve {name}'s new account at your bank</div><div className="why">{name}'s account changed, so your bank needs to approve sending to the new one. Until then, you send payments yourself.</div></div></div>
-          <div className="acts"><button type="button" className="pa-btn" onClick={onReapprove}>Turn back on</button></div>
+        <article className="pa-post">
+          <Seen name={name} child={false} end={<span className="pa-chip due">Stopped</span>} />
+          <div className="pa-say">Approve {name}'s new account <em>at your bank</em></div>
+          <div className="pa-why">{name}'s account changed, so your bank needs to approve sending to the new one. Until then, you send payments yourself.</div>
+          <div className="pa-acts"><button type="button" className="pa-btn" onClick={onReapprove}>Turn back on</button></div>
         </article>
       ) : null}
 
       {setupStep ? (
-        <article className="pa-decision" style={{ ["--edge" as string]: "#58CC02" }}>
-          <div className="pa-row" style={{ alignItems: "flex-start" }}><img className="art" src={ART.vault} alt="" />
-            <div className="pa-grow"><div className="who">First step</div><div className="what">Add {name}'s account</div><div className="why">{name}'s own savings account at your bank, so pocket money and rewards go straight to {name}. Takes a minute.</div></div></div>
-          <div className="acts"><button type="button" className="pa-btn" onClick={onSetup}>Add {name}'s account</button></div>
+        <article className="pa-post">
+          <Seen name={name} child={false} when="First step" />
+          <div className="pa-say">Add {name}'s account</div>
+          <div className="pa-why">{name}'s own savings account at your bank, so pocket money and rewards go straight to {name}. Takes a minute.</div>
+          <div className="pa-acts"><button type="button" className="pa-btn" onClick={onSetup}>Add {name}'s account</button></div>
         </article>
       ) : null}
 
       {pending ? (
-        <article className="pa-decision" style={{ ["--edge" as string]: "#1CB0F6" }}>
-          <div className="pa-row" style={{ alignItems: "flex-start" }}><img className="art" src={ART.vault} alt="" />
-            <div className="pa-grow"><div className="who">Waiting for your bank</div><div className="what">Finish approving automatic payments</div><div className="why">Up to {aed(pending.limits.maxPerPayment)} a payment, {aed(pending.limits.maxPerWeek)} a week.</div></div></div>
-          <div className="acts"><a className="pa-btn" href={pending.authorisationUrl} target="_blank" rel="noreferrer">Approve at my bank</a>
-            <button type="button" className="pa-btn ghost" style={{ flex: "0 0 auto", minWidth: 0, paddingInline: 20 }} disabled={busy === "mandate"} onClick={() => void run("mandate", async () => { await api.cancelMandate(pending.id); return "Cancelled. Check the account in Settings, then try again"; })}>Cancel</button></div>
-          <div className="pa-small" style={{ marginTop: 8 }}>Bank couldn't find the account? Cancel, check {name}'s account in Settings, and start again.</div>
+        <article className="pa-post">
+          <Seen name={name} child={false} when="Waiting for your bank" />
+          <div className="pa-say">Finish approving <em>automatic payments</em></div>
+          <div className="pa-why"><Txt s={`Up to ${aed(pending.limits.maxPerPayment)} a payment, ${aed(pending.limits.maxPerWeek)} a week.`} /></div>
+          <div className="pa-acts"><a className="pa-btn grow" href={pending.authorisationUrl} target="_blank" rel="noreferrer">Approve at my bank</a>
+            <button type="button" className="pa-btn ghost" disabled={busy === "mandate"} onClick={() => void run("mandate", async () => { await api.cancelMandate(pending.id); return "Cancelled. Check the account in Settings, then try again"; })}>Cancel</button></div>
+          <div className="pa-small" style={{ marginTop: 10 }}>Bank couldn't find the account? Cancel, check {name}'s account in Settings, and start again.</div>
         </article>
       ) : null}
 
-      {due.map((p) => (
-        <article key={p.id} className="pa-decision" style={{ ["--edge" as string]: "#FFC800" }}>
-          <div className="pa-row" style={{ alignItems: "flex-start" }}><img className="art" src={ART.trophy} alt="" />
-            <div className="pa-grow"><div className="who">{name} · {p.dueAt ? day(p.dueAt) : "just now"}</div><div className="what">Finished {p.gateName}</div>
-              <div className="why">{capOf(p)?.progress ? `${capOf(p)?.progress?.total ?? 0} of ${capOf(p)?.progress?.total ?? 0} lessons. ` : ""}You promised {p.reward?.kind === "promise" ? `"${p.reward.title}"` : aed(p.amount)}.</div></div></div>
-          <div className="acts"><button type="button" className="pa-btn block" disabled={busy === p.id} onClick={() => void run(p.id, async () => {
-            const r = await api.releasePledge(childId, p.id);
-            if (r.pledge.reward?.kind === "promise") return `Kept: ${r.pledge.reward.title}`;
-            const pays = (await api.payments(childId)).payments;
-            afterSend(pays.find((x) => x.id === r.pledge.paymentId));
-          })}>{p.reward?.kind === "promise" ? "Kept it" : how === "manual" ? `I'll send ${aed(p.amount)}` : `Send ${aed(p.amount)}`}</button></div>
-        </article>
-      ))}
+      {due.map((p) => {
+        const c = capOf(p); const tot = c?.progress?.total ?? 0;
+        const colour = panelFor(p.capability);
+        return (
+          <article key={p.id} className="pa-post">
+            <Seen name={name} child when={p.dueAt ? day(p.dueAt) : "just now"} />
+            <div className="pa-say"><span className="pa-av sm" style={{ background: colour }}>{name.slice(0, 1).toUpperCase()}</span>{name} <em>finished</em> {p.gateName} <em>· you promised</em> {p.reward?.kind === "promise" ? `“${p.reward.title}”` : <Amt n={p.amount} />}</div>
+            <Panel colour={colour} art={ART.trophy} title={p.gateName} line={tot ? `${tot} of ${tot} lessons` : "Finished"} done={tot} total={tot} />
+            <div className="pa-acts"><button type="button" className="pa-btn" disabled={busy === p.id} onClick={() => void run(p.id, async () => {
+              const r = await api.releasePledge(childId, p.id);
+              if (r.pledge.reward?.kind === "promise") return `Kept: ${r.pledge.reward.title}`;
+              const pays = (await api.payments(childId)).payments;
+              afterSend(pays.find((x) => x.id === r.pledge.paymentId));
+            })}>{p.reward?.kind === "promise" ? "Kept it" : how === "manual" ? <>I'll send <Amt n={p.amount} /></> : <>Send <Amt n={p.amount} /></>}</button></div>
+          </article>
+        );
+      })}
 
-      {asks.map((r) => <AskCard key={r.id} r={r} name={name} busy={busy === r.id} onDecide={(yes, amount) => void run(r.id, async () => {
+      {asks.map((r) => <AskCard key={r.id} r={r} name={name} colour={colour} busy={busy === r.id} onDecide={(yes, amount) => void run(r.id, async () => {
         const out = await api.decideRequest(childId, r.id, yes, amount);
         if (!yes) { say(`Told ${name} not now`); return; }
         const pays = (await api.payments(childId)).payments;
@@ -250,13 +281,14 @@ function Today({ view, name, total, how, pending, busy, run, afterSend, say, api
       })} />)}
 
       {toSend.map((p) => (
-        <article key={p.id} className="pa-decision" style={{ ["--edge" as string]: "#FF9600" }}>
-          <div className="pa-row" style={{ alignItems: "flex-start" }}><img className="art" src={ART.gift} alt="" />
-            <div className="pa-grow"><div className="who">Waiting for you</div><div className="what">Send {aed(p.amount)} from your banking app</div><div className="why">{p.description}. Copy the details, pay in your bank, then tap below.</div></div></div>
+        <article key={p.id} className="pa-post">
+          <Seen name={name} child={false} when="Waiting for you" />
+          <div className="pa-say">Send <Amt n={p.amount} /> <em>from your banking app</em></div>
+          <div className="pa-why">{p.description}. Copy the details, pay in your bank, then tap below.</div>
           {view.payee ? <CopyRow label={`To · ${view.payee.label}`} value={`Account ending ${view.payee.last4}`} copy={view.payee.last4} /> : null}
           <CopyRow label="Amount" value={aed(p.amount)} copy={p.amount.toFixed(2)} />
           <CopyRow label="Reference" value={`Suited ${p.description}`.slice(0, 34)} copy={`Suited ${p.description}`.slice(0, 34)} />
-          <div className="acts"><button type="button" className="pa-btn block" disabled={busy === p.id} onClick={() => void run(p.id, async () => { const r = await api.markSent(childId, p.id); return r.payment.status === "confirmed" ? `${name} already said it arrived` : `Thanks. ${name} will confirm when it lands`; })}>I've sent it</button></div>
+          <div className="pa-acts"><button type="button" className="pa-btn block" disabled={busy === p.id} onClick={() => void run(p.id, async () => { const r = await api.markSent(childId, p.id); return r.payment.status === "confirmed" ? `${name} already said it arrived` : `Thanks. ${name} will confirm when it lands`; })}>I've sent it</button></div>
         </article>
       ))}
 
@@ -264,12 +296,33 @@ function Today({ view, name, total, how, pending, busy, run, afterSend, say, api
         <div className="pa-card pa-done"><img src={FRANK} alt="Frank" /><div className="pa-h2">All caught up</div><div className="pa-muted" style={{ marginTop: 4 }}>Nothing needs you right now. We'll tell you when {name} finishes something.</div></div>
       ) : null}
 
-      {waiting.length ? <div className="pa-card"><div className="pa-small">{reading ? `Waiting for it to land in ${name}'s account` : `Waiting for ${name} to confirm`}: {waiting.map((p) => aed(p.amount)).join(", ")}</div></div> : null}
+      {waiting.length ? <div className="pa-card"><div className="pa-small"><Txt s={`${reading ? `Waiting for it to land in ${name}'s account` : `Waiting for ${name} to confirm`}: ${waiting.map((p) => aed(p.amount)).join(", ")}`} /></div></div> : null}
 
       <FrankNote name={name} lessons={lessons} saved={saved} next={open[0]} cap={open[0] ? capOf(open[0]) : undefined} />
-      {open.length ? <span className="pa-eyebrow" style={{ marginTop: 6 }}>Learning to earning</span> : null}
 
+      {open.length ? <div className="pa-section"><span>Learning to earning</span></div> : null}
       {open.slice(0, 2).map((p) => <LearnCard key={p.id} p={p} cap={capOf(p)} name={name} />)}
+
+      {recent.length ? <div className="pa-section"><span>Recent</span><button type="button" onClick={onAllPayments}>See all</button></div> : null}
+      {recent.map((p) => <RecentPost key={p.id} p={p} name={name} />)}
+    </div>
+  );
+}
+
+/** One payment as a sentence: "You sent Maya ⃃30 pocket money". */
+function RecentPost({ p, name }: { p: Payment; name: string }) {
+  const st = payState(p, name);
+  const gate = /^Pledge kept: (.*) done$/.exec(p.description)?.[1];
+  const note = p.kind === "ask" ? p.description.replace(/^Top-up from [^:]*:\s*/, "") : p.description;
+  return (
+    <div className="pa-post quiet">
+      <Seen name={name} child when={day(p.createdAt)} end={<span className={`pa-chip ${st[0]}`}>{st[1]}</span>} />
+      <div className="pa-say">
+        {p.kind === "allowance" ? <>You <em>sent</em> {name} <Amt n={p.amount} /> <em>pocket money</em></>
+          : p.kind === "pledge" ? <>You <em>sent</em> <Amt n={p.amount} /> <em>for finishing</em> {gate ?? "a reward"}</>
+          : p.kind === "ask" ? <>You <em>said yes to</em> <Amt n={p.amount} /> <em>for</em> {note}</>
+          : <>You <em>sent</em> {name} <Amt n={p.amount} />{note && !/^From /.test(note) ? <> <em>·</em> {note}</> : null}</>}
+      </div>
     </div>
   );
 }
@@ -281,37 +334,37 @@ function FrankNote({ name, lessons, saved, next, cap }: { name: string; lessons:
   const coming = next && left !== null ? ` ${left === 1 ? "One lesson" : `${left} lessons`} left in ${next.gateName}, then ${next.reward?.kind === "promise" ? "your promise is due" : `${aed(next.amount)} comes ${name}'s way`}.` : next ? ` Next up: ${next.gateName}.` : " Set a reward for what's next and I'll keep cheering.";
   return (
     <div className="pa-frank"><img src={FRANK} alt="Uncle Frank" />
-      <div className="bub"><b>Uncle Frank · this week</b><p>{proud}{coming}</p></div>
+      <div className="bub"><b>Uncle Frank · this week</b><p><Txt s={proud + coming} /></p></div>
     </div>
   );
 }
 
-function AskCard({ r, name, busy, onDecide }: { r: TopUpRequest; name: string; busy: boolean; onDecide: (yes: boolean, amount?: number) => void }) {
+function AskCard({ r, name, colour, busy, onDecide }: { r: TopUpRequest; name: string; colour: string; busy: boolean; onDecide: (yes: boolean, amount?: number) => void }) {
   const base = r.amount ?? 10;
   const options = Array.from(new Set([Math.max(5, base - 5), base, base + 5, base + 10])).sort((a, b) => a - b);
   const [amount, setAmount] = useState<number>(base);
   return (
-    <article className="pa-decision" style={{ ["--edge" as string]: "#1CB0F6" }}>
-      <div className="pa-row" style={{ alignItems: "flex-start" }}><img className="art" src={ART.metro} alt="" />
-        <div className="pa-grow"><div className="who">{name} asked · {day(r.at)}</div><div className="what">"{r.note}"</div><div className="why">{r.amount !== undefined ? `${name} suggested ${aed(r.amount)}. Change it if you like.` : `${name} left the amount to you.`}</div></div></div>
+    <article className="pa-post">
+      <Seen name={name} child when={day(r.at)} />
+      <div className="pa-say"><span className="pa-av sm" style={{ background: colour }}>{name.slice(0, 1).toUpperCase()}</span>{name} <em>asked for</em> {r.amount !== undefined ? <Amt n={r.amount} /> : "money"} <em>for</em> {r.note}</div>
+      <div className="pa-why">{r.amount !== undefined ? "Change the amount if you like." : `${name} left the amount to you.`}</div>
       <div className="pa-amounts" role="group" aria-label="Amount">{options.map((v) => <button key={v} type="button" className="pa-amt" aria-pressed={amount === v} onClick={() => { setAmount(v); }}>{v}</button>)}</div>
-      <div className="acts"><button type="button" className="pa-btn" disabled={busy} onClick={() => { onDecide(true, amount); }}>Yes, {aed(amount)}</button><button type="button" className="pa-btn ghost" disabled={busy} onClick={() => { onDecide(false); }}>Not now</button></div>
+      <div className="pa-acts"><button type="button" className="pa-btn grow" disabled={busy} onClick={() => { onDecide(true, amount); }}>Yes, <Amt n={amount} /></button><button type="button" className="pa-btn ghost" disabled={busy} onClick={() => { onDecide(false); }}>Not now</button></div>
     </article>
   );
 }
 
+/** A reward in progress: what the child can see, with the thread's progress on a colour panel. */
 function LearnCard({ p, cap, name }: { p: Pledge; cap: CapabilitiesView["capabilities"][number] | undefined; name: string }) {
   const done = cap?.progress?.done ?? 0, totalL = cap?.progress?.total ?? 0;
-  const pct = totalL ? Math.round((done / totalL) * 100) : 0;
+  const left = totalL - done;
   return (
-    <div className="pa-card"><div className="pa-row">
-      <div className="pa-ring" style={{ ["--p" as string]: pct }}><span>{done}/{totalL || "?"}</span></div>
-      <div className="pa-grow"><b className="din" style={{ fontSize: 16, display: "block" }}>{p.gateName}</b>
-        {totalL ? <div className="pa-lessons">{Array.from({ length: totalL }, (_, i) => <i key={i} className={i < done ? "on" : ""} />)}</div> : null}
-        <div className="pa-tag">{p.reward?.kind === "promise" ? `You promised: ${p.reward.title}` : `${aed(p.amount)} when ${name} finishes${p.autoRelease ? ", sent automatically" : ""}`}</div>
-      </div></div>
-      {totalL ? <div className="pa-muted" style={{ marginTop: 10 }}>{totalL - done === 1 ? "One lesson to go." : `${totalL - done} lessons to go.`}</div> : null}
-    </div>
+    <article className="pa-post">
+      <Seen name={name} child when={`set ${day(p.madeAt).toLowerCase() === "today" ? "today" : day(p.madeAt)}`} />
+      <div className="pa-say">{p.reward?.kind === "promise" ? `“${p.reward.title}”` : <Amt n={p.amount} />} <em>when {name} finishes</em> {p.gateName}</div>
+      <Panel colour={panelFor(p.capability)} art={artFor(p)} title={p.gateName} line={totalL ? `${done} of ${totalL} lessons` : "Not started"} done={done} total={totalL} height={136} />
+      <div className="pa-why">{totalL ? (left === 1 ? "One lesson to go." : `${left} lessons to go.`) : ""}{p.reward?.kind === "promise" ? " You tap Kept it when you've done it." : p.autoRelease ? " Sent automatically when it's done." : " You send it with one tap when it's done."}</div>
+    </article>
   );
 }
 
@@ -321,12 +374,12 @@ function CopyRow({ label, value, copy }: { label: string; value: string; copy: s
     const ok = (): void => { setDone(true); setTimeout(() => { setDone(false); }, 1400); };
     try { void navigator.clipboard.writeText(copy).then(ok, ok); } catch { ok(); }
   };
-  return <div className="pa-copy"><span><small>{label}</small>{value}</span><button type="button" onClick={go}>{done ? "Copied" : "Copy"}</button></div>;
+  return <div className="pa-copy"><span><small>{label}</small><Txt s={value} /></span><button type="button" onClick={go}>{done ? "Copied" : "Copy"}</button></div>;
 }
 
 /* ───────────── Money ───────────── */
 
-function Money({ view, name, total, how, paused, flying, onSend, onPocket }: { view: CapabilitiesView; name: string; total: number; how: How; paused: boolean; flying: number; onSend: () => void; onPocket: () => void }) {
+function Money({ view, name, colour, total, how, paused, flying, onSend, onPocket }: { view: CapabilitiesView; name: string; colour: string; total: number; how: How; paused: boolean; flying: number; onSend: () => void; onPocket: () => void }) {
   const a = view.allowance ?? null;
   const pays = [...(view.payments ?? [])];
   const jars = [{ id: "spend", name: "Spend", balance: view.account?.balance ?? 0, target: undefined as number | undefined }, ...(view.jars ?? []).map((j) => ({ id: j.id, name: j.name, balance: j.balance, target: j.target }))];
@@ -340,27 +393,28 @@ function Money({ view, name, total, how, paused, flying, onSend, onPocket }: { v
   const chip = how === "auto" ? ["ok", "Automatic"] : paused ? ["off", "Paused"] : ["wait", "You send it"];
   return (
     <div className="pa-stack">
+      <h1 className="pa-h1" style={{ padding: "4px 4px 0" }}>Money</h1>
       <div className="pa-card">
         <div className="pa-row" style={{ justifyContent: "space-between" }}><span className="pa-eyebrow">How money reaches {name}</span><span className={`pa-chip ${chip[0]}`}>{chip[1]}</span></div>
         <div className="pa-flow">
-          <div className="pa-node"><div className="bubble" style={{ background: "#17321C" }}>You</div>Your bank</div>
-          <div className="pa-track"><div className="pa-coin" ref={coin}>AED</div></div>
-          <div className="pa-node"><div className="bubble" style={{ background: "#FF9600" }}>{name.slice(0, 1)}</div>{view.payee ? view.payee.label : `${name}'s account`}</div>
+          <div className="pa-node"><div className="bubble" style={{ background: "#111A14" }}>You</div>Your bank</div>
+          <div className="pa-track"><div className="pa-coin" ref={coin}><Dirham /></div></div>
+          <div className="pa-node"><div className="bubble" style={{ background: colour }}>{name.slice(0, 1)}</div>{view.payee ? view.payee.label : `${name}'s account`}</div>
         </div>
         <div className="pa-muted" style={{ textAlign: "center" }}>{how === "auto" ? "Bank to bank, within the limits you approved. Suited never holds it." : `You send from your banking app; ${name} confirms when it lands. Suited never holds it.`}</div>
         <button type="button" className="pa-btn block" style={{ marginTop: 14 }} onClick={onSend}>Send money</button>
       </div>
       <div className="pa-card">
-        <div className="pa-row" style={{ justifyContent: "space-between" }}><div className="pa-h2">{name}'s jars</div><b className="din" style={{ fontSize: 18 }}>{aed(total)}</b></div>
+        <div className="pa-row" style={{ justifyContent: "space-between" }}><div className="pa-h2">{name}'s jars</div><b className="din" style={{ fontSize: 18 }}><Amt n={total} /></b></div>
         <div className="pa-muted" style={{ marginBottom: 6 }}>{name} decides what goes where. {view.account?.source === "suited-record" ? "Suited's record, not a bank balance." : "Read from the bank."}</div>
         {jars.map((j, i) => {
           const pct = Math.min(100, Math.round((j.balance / (j.target ?? max)) * 100));
-          return <div key={j.id} className="pa-jar"><span>{j.name}{j.target ? ` · ${pct}%` : ""}</span><b>{aed(j.balance)}</b><div className="bar"><i style={{ width: `${pct}%`, background: i === 0 ? "#1CB0F6" : JAR_COLOURS[(i - 1) % JAR_COLOURS.length] }} /></div></div>;
+          return <div key={j.id} className="pa-jar"><span>{j.name}{j.target ? ` · ${pct}%` : ""}</span><b><Amt n={j.balance} /></b><div className="bar"><i style={{ width: `${pct}%`, background: i === 0 ? "#1CB0F6" : JAR_COLOURS[(i - 1) % JAR_COLOURS.length] }} /></div></div>;
         })}
       </div>
       <div className="pa-card"><div className="pa-row">
-        <div className="pa-lrow" style={{ padding: 0, border: 0 }}><div className="ic" style={{ background: "#FFF6CC" }}><img src={ART.coins} alt="" /></div></div>
-        <div className="pa-grow"><b className="din" style={{ fontSize: 16 }}>Pocket money</b><div className="pa-muted">{a ? `${aed(a.amount)} every ${DAYS[a.dayOfWeek] ?? "week"}${how === "auto" ? ", sent automatically" : ", you send it"}` : "Not set yet"}</div></div>
+        <div className="pa-lrow" style={{ padding: 0, border: 0 }}><div className="ic" style={{ background: "#FFC800" }}><img src={ART.coins} alt="" /></div></div>
+        <div className="pa-grow"><b className="din" style={{ fontSize: 16 }}>Pocket money</b><div className="pa-muted">{a ? <Txt s={`${aed(a.amount)} every ${DAYS[a.dayOfWeek] ?? "week"}${how === "auto" ? ", sent automatically" : ", you send it"}`} /> : "Not set yet"}</div></div>
         <button type="button" className="pa-btn ghost small" onClick={onPocket}>{a ? "Change" : "Set up"}</button></div></div>
       <div className="pa-card">
         <div className="pa-h2" style={{ marginBottom: 4 }}>Payments</div>
@@ -371,41 +425,83 @@ function Money({ view, name, total, how, paused, flying, onSend, onPocket }: { v
   );
 }
 
+/** The parent's words for where a payment is, and its chip colour. */
+function payState(p: Payment, name: string): [string, string] {
+  return p.status === "confirmed" ? ["ok", "Arrived"] : p.status === "failed" ? ["bad", "Didn't go through"] : p.status === "sent" ? (p.parentSaidSentAt ? ["wait", `Waiting for ${name}`] : ["way", "On its way"]) : p.status === "detected" ? ["way", "Seen at your bank"] : ["due", "Due"];
+}
+
 function PayRow({ p, name }: { p: Payment; name: string }) {
-  const st = p.status === "confirmed" ? ["ok", "Arrived"] : p.status === "failed" ? ["bad", "Didn't go through"] : p.status === "sent" ? (p.parentSaidSentAt ? ["wait", `Waiting for ${name}`] : ["way", "On its way"]) : p.status === "detected" ? ["way", "Seen at your bank"] : ["due", "Due"];
-  const art = p.kind === "pledge" ? ART.trophy : p.kind === "allowance" ? ART.coins : ART.gift;
+  const st = payState(p, name);
+  const [art, bg] = p.kind === "pledge" ? [ART.trophy, "#FFC800"] : p.kind === "allowance" ? [ART.coins, "#58CC02"] : [ART.gift, "#1CB0F6"];
   return (
-    <div className="pa-lrow"><div className="ic"><img src={art} alt="" /></div>
+    <div className="pa-lrow"><div className="ic" style={{ background: bg }}><img src={art} alt="" /></div>
       <div className="pa-grow"><b>{p.description}</b><small>{day(p.createdAt)}{p.status === "failed" && p.failureReason ? ` · ${p.failureReason}` : ""}</small></div>
-      <div style={{ display: "grid", justifyItems: "end", gap: 4 }}><span className="amt">+{p.amount % 1 ? p.amount.toFixed(2) : p.amount}</span><span className={`pa-chip ${st[0]}`}>{st[1]}</span></div>
+      <div style={{ display: "grid", justifyItems: "end", gap: 4 }}><span className="amt"><Amt n={p.amount} plus /></span><span className={`pa-chip ${st[0]}`}>{st[1]}</span></div>
     </div>
   );
 }
 
 /* ───────────── Rewards ───────────── */
 
-function Rewards({ view, name, busy, onNew, onCancel }: { view: CapabilitiesView; name: string; busy: string | null; onNew: () => void; onCancel: (id: string) => void }) {
-  const pledges = (view.pledges ?? []).filter((p) => p.status !== "cancelled");
+/** "Sent automatically when finished", or what happens next for this reward. */
+function rewardLine(p: Pledge): string {
+  return p.status === "paid" ? (p.reward?.kind === "promise" ? "Kept" : "Sent") : p.status === "due" ? "Finished. It's on Today for you" : p.reward?.kind === "promise" ? "You tap Kept it when you've done it" : p.autoRelease ? "Sent automatically when finished" : "You send it with one tap when finished";
+}
+
+function Rewards({ view, name, onNew, onOpen }: { view: CapabilitiesView; name: string; onNew: () => void; onOpen: (id: string) => void }) {
+  const all = (view.pledges ?? []).filter((p) => p.status !== "cancelled");
+  const working = all.filter((p) => p.status === "open" || p.status === "due");
+  const finished = all.filter((p) => p.status === "paid");
+  const [seg, setSeg] = useState<"working" | "finished">("working");
+  const list = seg === "working" ? working : finished;
   const capOf = (p: Pledge) => view.capabilities.find((c) => c.capability === p.capability);
   return (
     <div className="pa-stack">
-      <div className="pa-row" style={{ justifyContent: "space-between" }}><h1 className="pa-h1">Rewards</h1><button type="button" className="pa-btn small" onClick={onNew}>New reward</button></div>
-      <div className="pa-muted" style={{ marginTop: -6 }}>Promises {name} can see, in your words, for finishing what {name} is learning.</div>
-      {pledges.map((p) => {
+      <div className="pa-row" style={{ justifyContent: "space-between", padding: "4px 4px 0" }}><h1 className="pa-h1">Rewards</h1><button type="button" className="pa-btn small" onClick={onNew}>New reward</button></div>
+      {all.length ? (
+        <div className="pa-segs" role="group" aria-label="Show">
+          <button type="button" className="pa-seg" aria-pressed={seg === "working"} onClick={() => { setSeg("working"); }}>Working on · {working.length}</button>
+          <button type="button" className="pa-seg" aria-pressed={seg === "finished"} onClick={() => { setSeg("finished"); }}>Finished · {finished.length}</button>
+        </div>
+      ) : null}
+      {list.map((p) => {
         const c = capOf(p); const done = c?.progress?.done ?? 0, tot = c?.progress?.total ?? 0;
-        const pct = p.status === "open" && tot ? Math.round((done / tot) * 100) : 100;
         return (
-          <div key={p.id} className="pa-card"><div className="pa-row">
-            <div className="pa-ring" style={{ ["--p" as string]: pct }}><span>{p.status === "open" ? `${done}/${tot || "?"}` : "✓"}</span></div>
-            <div className="pa-grow"><b className="din" style={{ fontSize: 16, display: "block" }}>{p.gateName}</b>
-              <div className="pa-tag" style={{ marginTop: 4 }}>{p.reward?.kind === "promise" ? p.reward.title : aed(p.amount)}</div>
-              <div className="pa-small" style={{ marginTop: 2 }}>{p.status === "paid" ? (p.reward?.kind === "promise" ? "Kept" : "Sent") : p.status === "due" ? "Finished. It's on Today for you" : p.reward?.kind === "promise" ? "You tap Kept it when you've done it" : p.autoRelease ? "Sent automatically when finished" : "You send it with one tap when finished"}</div></div>
-            {p.status === "open" ? <button type="button" className="pa-btn ghost small" disabled={busy === `cancel-${p.id}`} onClick={() => { onCancel(p.id); }}>Cancel</button> : null}
-          </div></div>
+          <button key={p.id} type="button" className="pa-reward" onClick={() => { onOpen(p.id); }}>
+            <div className="sw" style={{ background: panelFor(p.capability) }}><img src={artFor(p)} alt="" /><span>{p.status === "open" ? `${done}/${tot || "?"}` : "✓"}</span></div>
+            <div className="pa-grow"><div className="pa-say">{p.gateName} <em>·</em> {p.reward?.kind === "promise" ? p.reward.title : <Amt n={p.amount} />}</div><small>{rewardLine(p)}</small></div>
+            <svg className="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m9 6 6 6-6 6" /></svg>
+          </button>
         );
       })}
-      {pledges.length === 0 ? <div className="pa-card pa-muted">No rewards yet. Pick something {name} is learning and promise something for finishing it.</div> : null}
+      {all.length === 0 ? <div className="pa-card pa-muted">No rewards yet. Pick something {name} is learning and promise something for finishing it.</div>
+        : list.length === 0 ? <div className="pa-card pa-muted">{seg === "working" ? `Nothing in progress. Tap New reward to give ${name} something to work towards.` : "Nothing finished yet. Kept promises and sent rewards show up here."}</div> : null}
+      {working.length > 0 ? <div className="pa-frank" style={{ marginTop: 4 }}><img src={FRANK} alt="Uncle Frank" /><div className="bub"><b>Tip from Frank</b><p>One reward per subject works best. Too many at once and none of them feel special.</p></div></div> : null}
     </div>
+  );
+}
+
+/** One reward, as the child sees it, with the parent's way out while it's still open. */
+function RewardDetail({ view, name, id, guardianLabel, busy, onClose, onCancel }: { view: CapabilitiesView; name: string; id: string; guardianLabel: string; busy: string | null; onClose: () => void; onCancel: (id: string) => void }) {
+  const p = (view.pledges ?? []).find((x) => x.id === id);
+  if (!p) return null;
+  const c = view.capabilities.find((x) => x.capability === p.capability);
+  const done = c?.progress?.done ?? 0, tot = c?.progress?.total ?? 0;
+  const who = guardianLabel.includes("@") ? "You" : guardianLabel;
+  return (
+    <Sheet onClose={onClose}>
+      <h3 className="c">What {name} sees</h3>
+      <div className="pa-muted c">In {name}'s Money tab</div>
+      <div className="pa-kidcard">
+        <div className="e">{who} promised</div>
+        <div className="n">{p.reward?.kind === "promise" ? p.reward.title : <Amt n={p.amount} />}</div>
+        <div className="w">when you finish {p.gateName}{tot ? ` · ${done} of ${tot}` : ""}</div>
+        {tot ? <div className="pa-dots">{Array.from({ length: Math.min(tot, 12) }, (_, i) => <i key={i} className={i < Math.round((done / tot) * Math.min(tot, 12)) ? "on" : ""} />)}</div> : null}
+      </div>
+      <div className="pa-muted c">{rewardLine(p)}.</div>
+      {p.status === "open" ? <button type="button" className="pa-btn danger block" style={{ marginTop: 16 }} disabled={busy === `cancel-${p.id}`} onClick={() => { onCancel(p.id); }}>Cancel this reward</button> : null}
+      <button type="button" className="pa-btn ghost block" style={{ marginTop: 8 }} onClick={onClose}>Done</button>
+    </Sheet>
   );
 }
 
@@ -440,7 +536,7 @@ function BankBalance({ view, name, api, childId, busy, run }: { view: Capabiliti
       ) : bank?.status === "active" ? (
         <>
           <div className="pa-row" style={{ marginTop: 8 }}>
-            <div className="pa-grow"><b className="din" style={{ fontSize: 15 }}>{bank.balance ? aed(bank.balance.amount) : "Reading…"}</b>
+            <div className="pa-grow"><b className="din" style={{ fontSize: 15 }}>{bank.balance ? <Amt n={bank.balance.amount} /> : "Reading…"}</b>
               <div className="pa-small">{bank.bankName ?? "Bank"}{bank.balance ? ` · ending ${bank.balance.last4} · ${ago(bank.balance.asOf)}` : ""}{bank.expiresAt ? ` · until ${until(bank.expiresAt)}` : ""}</div></div>
             <span className="pa-chip ok">Read-only</span>
           </div>
@@ -542,7 +638,7 @@ function Settings({ view, name, api, childId, mine, busy, run, onPermission, gua
           {current ? (
             <div className="pa-row" style={{ marginTop: 14 }}>
               <div className="pa-grow"><b className="din" style={{ fontSize: 15 }}>{current.status === "pending" ? "Waiting for your bank" : current.status === "paused" ? "Automatic payments paused" : "Automatic payments on"}</b>
-                <div className="pa-small">Up to {aed(current.limits.maxPerPayment)} a payment and {aed(current.limits.maxPerWeek)} a week, until {until(current.limits.endDate)}.{current.status === "active" ? " Cancel for good in your banking app." : ""}</div></div>
+                <div className="pa-small"><Txt s={`Up to ${aed(current.limits.maxPerPayment)} a payment and ${aed(current.limits.maxPerWeek)} a week, until ${until(current.limits.endDate)}.${current.status === "active" ? " Cancel for good in your banking app." : ""}`} /></div></div>
               {current.status === "pending" ? <div className="pa-row" style={{ gap: 8 }}><button type="button" className="pa-btn ghost small" disabled={busy === "mandate"} onClick={() => void run("mandate", async () => { await api.cancelMandate(current.id); return "Cancelled. Check the account, then try again"; })}>Cancel</button><a className="pa-btn small" href={current.authorisationUrl} target="_blank" rel="noreferrer">Approve</a></div>
                 : <button type="button" className="pa-switch" role="switch" aria-checked={current.status === "active"} aria-label="Automatic payments" disabled={busy === "mandate"} onClick={() => void run("mandate", async () => { await api.setMandatePaused(current.id, current.status === "active"); return current.status === "active" ? "Automatic payments paused" : "Automatic payments back on"; })} />}
             </div>
@@ -579,16 +675,32 @@ function Sheet({ onClose, children }: { onClose: () => void; children: React.Rea
   return <><div className="pa-scrim" onClick={onClose} /><div className="pa-sheet" role="dialog" aria-modal="true"><div className="grab" />{children}</div></>;
 }
 
+/** The Give button: every way to give, one tap away from any tab. */
+function GiveSheet({ view, name, how, onClose, onPick }: { view: CapabilitiesView; name: string; how: How; onClose: () => void; onPick: (s: "send" | "pocket" | "reward") => void }) {
+  const a = view.allowance ?? null;
+  return (
+    <Sheet onClose={onClose}>
+      <h3 className="c">Give {name}</h3>
+      <div className="pa-muted c">{how === "auto" ? "Sent bank to bank within your limits" : "You send it from your banking app"}</div>
+      <div style={{ marginTop: 10 }}>
+        <button type="button" className="pa-opt" onClick={() => { onPick("send"); }}><span className="ic" style={{ background: "#1CB0F6" }}><img src={ART.gift} alt="" /></span><span className="pa-grow"><b>Send money</b><small>Once, now, with a note {name} sees</small></span></button>
+        <button type="button" className="pa-opt" onClick={() => { onPick("pocket"); }}><span className="ic" style={{ background: "#58CC02" }}><img src={ART.coins} alt="" /></span><span className="pa-grow"><b>Pocket money</b><small>{a ? <Txt s={`${aed(a.amount)} every ${DAYS[a.dayOfWeek] ?? "week"}. Change it`} /> : "The same amount, the same day, every week"}</small></span></button>
+        <button type="button" className="pa-opt" onClick={() => { onPick("reward"); }}><span className="ic" style={{ background: "#FFC800" }}><img src={ART.trophy} alt="" /></span><span className="pa-grow"><b>A reward for learning</b><small>For finishing something {name} is learning</small></span></button>
+      </div>
+    </Sheet>
+  );
+}
+
 function SendSheet({ name, how, onClose, onSend }: { name: string; how: How; onClose: () => void; onSend: (amount: number, note: string) => void }) {
   const [amount, setAmount] = useState(20);
   const [note, setNote] = useState("");
   return (
     <Sheet onClose={onClose}>
       <h3>Send to {name}</h3><div className="pa-muted">From your account to {name}'s.</div>
-      <div className="pa-bignum"><small>AED</small><span>{amount}</span></div>
+      <div className="pa-bignum"><Amt n={amount} /></div>
       <div className="pa-amounts" style={{ justifyContent: "center" }}>{[10, 20, 50, 100].map((v) => <button key={v} type="button" className="pa-amt" aria-pressed={amount === v} onClick={() => { setAmount(v); }}>{v}</button>)}</div>
       <div className="pa-field"><label htmlFor="send-note">A note {name} sees</label><input id="send-note" maxLength={60} value={note} onChange={(e) => { setNote(e.target.value); }} placeholder="Well done this week" /></div>
-      <button type="button" className="pa-btn block" style={{ marginTop: 16 }} onClick={() => { onSend(amount, note.trim()); }}>Send {aed(amount)}</button>
+      <button type="button" className="pa-btn block" style={{ marginTop: 16 }} onClick={() => { onSend(amount, note.trim()); }}>Send <Amt n={amount} /></button>
       <div className="pa-note">{how === "auto" ? "Sent under your permission. Your bank shows every payment." : "We'll give you the details to copy into your banking app."}</div>
     </Sheet>
   );
@@ -605,7 +717,7 @@ function PocketSheet({ view, onClose, onSave, onStop }: { view: CapabilitiesView
       <div className="pa-amounts">{[10, 15, 20, 30, 50].map((v) => <button key={v} type="button" className="pa-amt" aria-pressed={amount === v} onClick={() => { setAmount(v); }}>{v}</button>)}</div>
       <div className="pa-eyebrow" style={{ marginTop: 14 }}>Which day</div>
       <div className="pa-amounts">{DAYS.map((x, i) => <button key={x} type="button" className="pa-amt" aria-pressed={d === i} onClick={() => { setD(i); }}>{x.slice(0, 3)}</button>)}</div>
-      <button type="button" className="pa-btn block" style={{ marginTop: 18 }} onClick={() => { onSave(amount, d); }}>{aed(amount)} every {DAYS[d]}</button>
+      <button type="button" className="pa-btn block" style={{ marginTop: 18 }} onClick={() => { onSave(amount, d); }}><Amt n={amount} /> every {DAYS[d]}</button>
       {a ? <button type="button" className="pa-btn danger block" style={{ marginTop: 10 }} onClick={onStop}>Stop pocket money</button> : null}
     </Sheet>
   );
@@ -618,7 +730,7 @@ function RewardSheet({ view, name, onClose, onSave }: { view: CapabilitiesView; 
   }, [view.capabilities, view.pledges]);
   const [cap, setCap] = useState(options[0]?.capability ?? "");
   const [kind, setKind] = useState<"money" | "promise">("money");
-  const [amount, setAmount] = useState(30);
+  const [amount, setAmount] = useState(50);
   const [auto, setAuto] = useState(false);
   const [promise, setPromise] = useState("");
   const ok = cap !== "" && (kind === "money" ? amount > 0 : promise.trim().length > 0);
@@ -634,11 +746,11 @@ function RewardSheet({ view, name, onClose, onSave }: { view: CapabilitiesView; 
           <div className="pa-amounts"><button type="button" className="pa-amt" aria-pressed={kind === "money"} onClick={() => { setKind("money"); }}>Money</button><button type="button" className="pa-amt" aria-pressed={kind === "promise"} onClick={() => { setKind("promise"); }}>Something together</button></div>
           {kind === "money" ? (
             <>
-              <div className="pa-amounts">{[20, 30, 50, 100].map((v) => <button key={v} type="button" className="pa-amt" aria-pressed={amount === v} onClick={() => { setAmount(v); }}>AED {v}</button>)}</div>
+              <div className="pa-amounts">{[25, 50, 100, 250].map((v) => <button key={v} type="button" className="pa-amt" aria-pressed={amount === v} onClick={() => { setAmount(v); }}><Amt n={v} /></button>)}</div>
               <div className="pa-row" style={{ marginTop: 14 }}><div className="pa-grow"><b className="din">Send it automatically</b><div className="pa-small">Otherwise you send it with one tap when {name} finishes</div></div><button type="button" className="pa-switch" role="switch" aria-label="Send automatically" aria-checked={auto} onClick={() => { setAuto(!auto); }} /></div>
             </>
           ) : <div className="pa-field"><label htmlFor="promise-text">Your promise</label><input id="promise-text" maxLength={60} value={promise} onChange={(e) => { setPromise(e.target.value); }} placeholder="Pizza night, their pick" /></div>}
-          <button type="button" className="pa-btn block" style={{ marginTop: 18 }} disabled={!ok} onClick={() => { onSave(cap, kind === "money" ? amount : 0, kind === "money" ? { kind: "money", destination: "card" } : { kind: "promise", title: promise.trim() }, kind === "money" && auto); }}>{kind === "money" ? `Promise ${aed(amount)}` : "Promise it"}</button>
+          <button type="button" className="pa-btn block" style={{ marginTop: 18 }} disabled={!ok} onClick={() => { onSave(cap, kind === "money" ? amount : 0, kind === "money" ? { kind: "money", destination: "card" } : { kind: "promise", title: promise.trim() }, kind === "money" && auto); }}>{kind === "money" ? <>Promise <Amt n={amount} /></> : "Promise it"}</button>
         </>
       )}
     </Sheet>
@@ -653,9 +765,9 @@ function PermissionSheet({ name, onClose, onStart }: { name: string; onClose: ()
     <Sheet onClose={onClose}>
       <h3>Send automatically</h3><div className="pa-muted">Approve once at your bank and Suited sends pocket money and rewards to {name} within these limits. Your bank shows every payment.</div>
       <div className="pa-eyebrow" style={{ marginTop: 14 }}>Most per payment</div>
-      <div className="pa-amounts">{[50, 100, 200].map((v) => <button key={v} type="button" className="pa-amt" aria-pressed={pp === v} onClick={() => { setPp(v); if (pw < v) setPw(v); }}>AED {v}</button>)}</div>
+      <div className="pa-amounts">{[50, 100, 200].map((v) => <button key={v} type="button" className="pa-amt" aria-pressed={pp === v} onClick={() => { setPp(v); if (pw < v) setPw(v); }}><Amt n={v} /></button>)}</div>
       <div className="pa-eyebrow" style={{ marginTop: 14 }}>Most per week</div>
-      <div className="pa-amounts">{[100, 200, 400].filter((v) => v >= pp).map((v) => <button key={v} type="button" className="pa-amt" aria-pressed={pw === v} onClick={() => { setPw(v); }}>AED {v}</button>)}</div>
+      <div className="pa-amounts">{[100, 200, 400].filter((v) => v >= pp).map((v) => <button key={v} type="button" className="pa-amt" aria-pressed={pw === v} onClick={() => { setPw(v); }}><Amt n={v} /></button>)}</div>
       <div className="pa-eyebrow" style={{ marginTop: 14 }}>For</div>
       <div className="pa-amounts">{[4, 12, 26].map((v) => <button key={v} type="button" className="pa-amt" aria-pressed={wk === v} onClick={() => { setWk(v); }}>{v} weeks</button>)}</div>
       <button type="button" className="pa-btn block" style={{ marginTop: 18 }} onClick={() => { onStart(pp, pw, wk); }}>Continue to my bank</button>
@@ -675,7 +787,7 @@ function Celebrate({ name, amount, line, onClose }: { name: string; amount: numb
       <div className="pa-confetti">{pieces.map((p, i) => <i key={i} style={{ left: `${p.left}%`, background: p.colour, animationDelay: `${p.delay}s`, animationDuration: `${p.dur}s` }} />)}</div>
       <div className="inner">
         <img className="coin" src={ART.coins} alt="" />
-        <div className="big">{name} got {aed(amount)}</div>
+        <div className="big">{name} got <Amt n={amount} /></div>
         <div className="pa-says"><img src={FRANK} alt="Frank" /><div className="bub"><b>Frank</b>{line}</div></div>
         <button ref={btn} type="button" className="pa-btn ghost" style={{ marginTop: 8 }} onClick={onClose}>Nice</button>
       </div>
