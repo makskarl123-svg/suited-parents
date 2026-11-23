@@ -443,6 +443,17 @@ function PayRow({ p, name }: { p: Payment; name: string }) {
 
 /* ───────────── Rewards ───────────── */
 
+/** The reward itself, set apart from what it's for: a green pill for money, a yellow one for a promise. */
+function Prize({ p }: { p: Pledge }) {
+  const promise = p.reward?.kind === "promise";
+  return (
+    <span className={`pa-prize ${promise ? "promise" : "money"}`}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="5" rx="1" /><path d="M5 13v7h14v-7M12 8v12M12 8S10.5 3.5 8 4.5 9 8 12 8zm0 0s1.5-4.5 4-3.5S15 8 12 8z" /></svg>
+      <span className="t">{promise && p.reward?.kind === "promise" ? p.reward.title : <Amt n={p.amount} />}</span>
+    </span>
+  );
+}
+
 /** "Sent automatically when finished", or what happens next for this reward. */
 function rewardLine(p: Pledge): string {
   return p.status === "paid" ? (p.reward?.kind === "promise" ? "Kept" : "Sent") : p.status === "due" ? "Finished. It's on Today for you" : p.reward?.kind === "promise" ? "You tap Kept it when you've done it" : p.autoRelease ? "Sent automatically when finished" : "You send it with one tap when finished";
@@ -469,7 +480,7 @@ function Rewards({ view, name, onNew, onOpen }: { view: CapabilitiesView; name: 
         return (
           <button key={p.id} type="button" className="pa-reward" onClick={() => { onOpen(p.id); }}>
             <div className="sw" style={{ background: panelFor(p.capability) }}><img src={artFor(p)} alt="" /><span>{p.status === "open" ? `${done}/${tot || "?"}` : "✓"}</span></div>
-            <div className="pa-grow"><div className="pa-say">{p.gateName} <em>·</em> {p.reward?.kind === "promise" ? p.reward.title : <Amt n={p.amount} />}</div><small>{rewardLine(p)}</small></div>
+            <div className="pa-grow"><div className="pa-say">{p.gateName}</div><Prize p={p} /><small>{rewardLine(p)}</small></div>
             <svg className="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m9 6 6 6-6 6" /></svg>
           </button>
         );

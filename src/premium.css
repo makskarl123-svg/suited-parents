@@ -123,6 +123,11 @@
 .pa-reward .sw img { width: 62px; }
 .pa-reward .sw span { position: absolute; bottom: -4px; right: -4px; background: var(--ink); color: #fff; font-family: "DIN Round", sans-serif; font-weight: 700; font-size: 12px; border-radius: 99px; padding: 3px 7px; border: 2px solid var(--surface); font-variant-numeric: tabular-nums; }
 .pa-reward .pa-say { font-size: 17px; margin-top: 0; }
+.pa-prize { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; margin-top: 6px; height: 26px; padding: 0 10px 0 8px; border-radius: 99px; font-family: "DIN Round", sans-serif; font-weight: 700; font-size: 14px; }
+.pa-prize svg { flex: none; }
+.pa-prize .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pa-prize.money { background: var(--brand); color: var(--brand-ink); }
+.pa-prize.promise { background: var(--bee); color: #3D2F00; }
 .pa-reward small { display: block; color: var(--ink-2); font-size: 12px; font-weight: 600; margin-top: 4px; line-height: 1.35; }
 .pa-reward .chev { flex: none; color: var(--ink-3); padding-right: 6px; }
 
