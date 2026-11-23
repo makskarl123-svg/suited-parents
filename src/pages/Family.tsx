@@ -8,8 +8,9 @@
  * one endpoint in its contract.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, type Bank, type PayeeCheck, type CapabilitiesView, type ChildSummary, type Mandate, type MoneyApi, type Payment, type Pledge, type PledgeReward, type TopUpRequest } from "../api";
+import { ApiError, type Bank, type PayeeCheck, type CapabilitiesView, type ChildSummary, type Mandate, type MoneyApi, type Payment, type Pledge, type TopUpRequest } from "../api";
 import { aed, Amt, Dirham, Txt } from "../dirham";
+import { RewardPicker } from "./RewardPicker";
 
 type Tab = "today" | "money" | "rewards" | "settings";
 const ART = { coins: "/money/art/coin-stack.webp", gift: "/money/art/gift.webp", trophy: "/money/art/trophy.webp", jar: "/money/art/jar-coins.webp", vault: "/money/art/vault.webp", piggy: "/money/art/piggy.webp", key: "/money/art/key.webp", metro: "/money/art/metro.webp", padlock: "/money/art/padlock.webp", headphones: "/money/art/headphones.webp" };
@@ -17,6 +18,9 @@ const FRANK = "/family/frank.webp";
 const KID_COLOURS = ["#FF9600", "#CE82FF", "#1CB0F6", "#58CC02"];
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const JAR_COLOURS = ["#FF9600", "#CE82FF", "#58CC02", "#FFC800"];
+/** A reward's progress: its own (thread and subject goals), else its gate's. */
+type Progressed = { progress: { done: number; total: number } | null };
+const progressed = (view: CapabilitiesView, p: Pledge): Progressed => ({ progress: p.progress ?? view.capabilities.find((c) => c.capability === p.capability)?.progress ?? null });
 /** Each reward keeps one solid colour wherever it appears (Today, Rewards), picked from its id. */
 const PANELS = ["#1CB0F6", "#FF9600", "#CE82FF", "#58CC02", "#2B70C9", "#FFC800"];
 const panelFor = (key: string): string => { let h = 0; for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return PANELS[h % PANELS.length] ?? "#1CB0F6"; };
@@ -157,7 +161,7 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
       {detail && view ? <RewardDetail view={view} name={name} id={detail} guardianLabel={guardianLabel} busy={busy} onClose={() => { setDetail(null); }} onCancel={(id) => { setDetail(null); void run(`cancel-${id}`, async () => { await api.cancelPledge(childId, id); return "Reward cancelled"; }); }} /> : null}
       {sheet === "send" && view ? <SendSheet name={name} how={how} onClose={() => { setSheet(null); }} onSend={(amount, note) => { setSheet(null); void run("send", async () => { const r = await api.topUp(childId, amount, note || `From ${guardianLabel}`); afterSend(r.payment); }); }} /> : null}
       {sheet === "pocket" && view ? <PocketSheet view={view} onClose={() => { setSheet(null); }} onSave={(amount, d) => { setSheet(null); void run("pocket", async () => { await api.setAllowance(childId, amount, d); return `${aed(amount)} every ${DAYS[d] ?? "week"}`; }); }} onStop={() => { setSheet(null); void run("pocket", async () => { await api.clearAllowance(childId); return "Pocket money stopped"; }); }} /> : null}
-      {sheet === "reward" && view ? <RewardSheet view={view} name={name} onClose={() => { setSheet(null); }} onSave={(cap, amount, reward, auto) => { setSheet(null); setTab("rewards"); void run("reward", async () => { const r = await api.pledge(childId, cap, amount, undefined, reward, auto); return `${name} can see it now: ${reward.kind === "promise" ? reward.title : aed(r.pledge.amount)} for ${r.pledge.gateName}`; }); }} /> : null}
+      {sheet === "reward" && view ? <RewardPicker api={api} childId={childId} name={name} view={view} guardianLabel={guardianLabel} autoLimit={active ? active.limits.maxPerPayment : null} onClose={() => { setSheet(null); }} onSaved={(msg) => { setSheet(null); setTab("rewards"); say(msg); void load(); }} /> : null}
       {sheet === "permission" && view ? <PermissionSheet name={name} onClose={() => { setSheet(null); }} onStart={(pp, pw, wk) => { setSheet(null); void run("mandate", async () => { const r = await api.createMandate([childId], pp, pw, wk); window.open(r.mandate.authorisationUrl, "_blank", "noopener"); return "Your bank has opened in a new tab. Approve there, then come back."; }); }} /> : null}
 
       {toast ? <div className="pa-toast" role="status"><span className="pa-grow"><Txt s={toast.msg} /></span>{toast.undo ? <button type="button" onClick={() => { toast.undo?.(); setToast(null); }}>Undo</button> : null}</div> : null}
@@ -208,7 +212,7 @@ function Today({ view, name, colour, total, how, pending, busy, run, afterSend, 
   const open = (view.pledges ?? []).filter((p) => p.status === "open");
   const setupStep = needsAccount(view);
   const count = (setupStep ? 1 : 0) + (stopped ? 1 : 0) + due.length + asks.length + toSend.length + (pending ? 1 : 0);
-  const capOf = (p: Pledge) => view.capabilities.find((c) => c.capability === p.capability);
+  const capOf = (p: Pledge): Progressed => progressed(view, p);
 
   return (
     <div className="pa-stack">
@@ -256,7 +260,7 @@ function Today({ view, name, colour, total, how, pending, busy, run, afterSend, 
       ) : null}
 
       {due.map((p) => {
-        const c = capOf(p); const tot = c?.progress?.total ?? 0;
+        const c = capOf(p); const tot = c.progress?.total ?? 0;
         const colour = panelFor(p.capability);
         return (
           <article key={p.id} className="pa-post">
@@ -328,7 +332,7 @@ function RecentPost({ p, name }: { p: Payment; name: string }) {
 }
 
 /** Uncle Frank's weekly read on the child: something to be proud of, and what is coming up. Always there, never noisy. */
-function FrankNote({ name, lessons, saved, next, cap }: { name: string; lessons: number; saved: number; next: Pledge | undefined; cap: CapabilitiesView["capabilities"][number] | undefined }) {
+function FrankNote({ name, lessons, saved, next, cap }: { name: string; lessons: number; saved: number; next: Pledge | undefined; cap: Progressed | undefined }) {
   const left = cap?.progress ? Math.max(0, cap.progress.total - cap.progress.done) : null;
   const proud = lessons > 0 ? `${name} has finished ${lessons} ${lessons === 1 ? "lesson" : "lessons"}${saved > 0 ? ` and has ${aed(saved)} put away in jars` : ""}.` : `${name} hasn't started a lesson yet. The first one takes about five minutes.`;
   const coming = next && left !== null ? ` ${left === 1 ? "One lesson" : `${left} lessons`} left in ${next.gateName}, then ${next.reward?.kind === "promise" ? "your promise is due" : `${aed(next.amount)} comes ${name}'s way`}.` : next ? ` Next up: ${next.gateName}.` : " Set a reward for what's next and I'll keep cheering.";
@@ -355,7 +359,7 @@ function AskCard({ r, name, colour, busy, onDecide }: { r: TopUpRequest; name: s
 }
 
 /** A reward in progress: what the child can see, with the thread's progress on a colour panel. */
-function LearnCard({ p, cap, name }: { p: Pledge; cap: CapabilitiesView["capabilities"][number] | undefined; name: string }) {
+function LearnCard({ p, cap, name }: { p: Pledge; cap: Progressed | undefined; name: string }) {
   const done = cap?.progress?.done ?? 0, totalL = cap?.progress?.total ?? 0;
   const left = totalL - done;
   return (
@@ -465,7 +469,7 @@ function Rewards({ view, name, onNew, onOpen }: { view: CapabilitiesView; name: 
   const finished = all.filter((p) => p.status === "paid");
   const [seg, setSeg] = useState<"working" | "finished">("working");
   const list = seg === "working" ? working : finished;
-  const capOf = (p: Pledge) => view.capabilities.find((c) => c.capability === p.capability);
+  const capOf = (p: Pledge): Progressed => progressed(view, p);
   return (
     <div className="pa-stack">
       <div className="pa-row" style={{ justifyContent: "space-between", padding: "4px 4px 0" }}><h1 className="pa-h1">Rewards</h1><button type="button" className="pa-btn small" onClick={onNew}>New reward</button></div>
@@ -476,7 +480,7 @@ function Rewards({ view, name, onNew, onOpen }: { view: CapabilitiesView; name: 
         </div>
       ) : null}
       {list.map((p) => {
-        const c = capOf(p); const done = c?.progress?.done ?? 0, tot = c?.progress?.total ?? 0;
+        const c = capOf(p); const done = c.progress?.done ?? 0, tot = c.progress?.total ?? 0;
         return (
           <button key={p.id} type="button" className="pa-reward" onClick={() => { onOpen(p.id); }}>
             <div className="sw" style={{ background: panelFor(p.capability) }}><img src={artFor(p)} alt="" /><span>{p.status === "open" ? `${done}/${tot || "?"}` : "✓"}</span></div>
@@ -496,8 +500,8 @@ function Rewards({ view, name, onNew, onOpen }: { view: CapabilitiesView; name: 
 function RewardDetail({ view, name, id, guardianLabel, busy, onClose, onCancel }: { view: CapabilitiesView; name: string; id: string; guardianLabel: string; busy: string | null; onClose: () => void; onCancel: (id: string) => void }) {
   const p = (view.pledges ?? []).find((x) => x.id === id);
   if (!p) return null;
-  const c = view.capabilities.find((x) => x.capability === p.capability);
-  const done = c?.progress?.done ?? 0, tot = c?.progress?.total ?? 0;
+  const c = progressed(view, p);
+  const done = c.progress?.done ?? 0, tot = c.progress?.total ?? 0;
   const who = guardianLabel.includes("@") ? "You" : guardianLabel;
   return (
     <Sheet onClose={onClose}>
@@ -730,40 +734,6 @@ function PocketSheet({ view, onClose, onSave, onStop }: { view: CapabilitiesView
       <div className="pa-amounts">{DAYS.map((x, i) => <button key={x} type="button" className="pa-amt" aria-pressed={d === i} onClick={() => { setD(i); }}>{x.slice(0, 3)}</button>)}</div>
       <button type="button" className="pa-btn block" style={{ marginTop: 18 }} onClick={() => { onSave(amount, d); }}><Amt n={amount} /> every {DAYS[d]}</button>
       {a ? <button type="button" className="pa-btn danger block" style={{ marginTop: 10 }} onClick={onStop}>Stop pocket money</button> : null}
-    </Sheet>
-  );
-}
-
-function RewardSheet({ view, name, onClose, onSave }: { view: CapabilitiesView; name: string; onClose: () => void; onSave: (capability: string, amount: number, reward: PledgeReward, auto: boolean) => void }) {
-  const options = useMemo(() => {
-    const taken = new Set((view.pledges ?? []).filter((p) => p.status === "open" || p.status === "due").map((p) => p.capability));
-    return view.capabilities.filter((c) => c.state === "Locked" && !taken.has(c.capability));
-  }, [view.capabilities, view.pledges]);
-  const [cap, setCap] = useState(options[0]?.capability ?? "");
-  const [kind, setKind] = useState<"money" | "promise">("money");
-  const [amount, setAmount] = useState(50);
-  const [auto, setAuto] = useState(false);
-  const [promise, setPromise] = useState("");
-  const ok = cap !== "" && (kind === "money" ? amount > 0 : promise.trim().length > 0);
-  return (
-    <Sheet onClose={onClose}>
-      <h3>New reward</h3><div className="pa-muted">When {name} finishes…</div>
-      {options.length === 0 ? <div className="pa-muted" style={{ marginTop: 12 }}>Everything {name} is learning already has a reward or is finished.</div> : (
-        <>
-          <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
-            {options.slice(0, 5).map((c) => <button key={c.capability} type="button" className="pa-choice" style={{ marginTop: 0 }} aria-pressed={cap === c.capability} onClick={() => { setCap(c.capability); }}><div className="pa-grow"><b>{c.gateName}</b><small>{c.progress ? `${c.progress.done} of ${c.progress.total} lessons done` : "Not started"}</small></div></button>)}
-          </div>
-          <div className="pa-eyebrow" style={{ marginTop: 14 }}>{name} gets</div>
-          <div className="pa-amounts"><button type="button" className="pa-amt" aria-pressed={kind === "money"} onClick={() => { setKind("money"); }}>Money</button><button type="button" className="pa-amt" aria-pressed={kind === "promise"} onClick={() => { setKind("promise"); }}>Something together</button></div>
-          {kind === "money" ? (
-            <>
-              <div className="pa-amounts">{[25, 50, 100, 250].map((v) => <button key={v} type="button" className="pa-amt" aria-pressed={amount === v} onClick={() => { setAmount(v); }}><Amt n={v} /></button>)}</div>
-              <div className="pa-row" style={{ marginTop: 14 }}><div className="pa-grow"><b className="din">Send it automatically</b><div className="pa-small">Otherwise you send it with one tap when {name} finishes</div></div><button type="button" className="pa-switch" role="switch" aria-label="Send automatically" aria-checked={auto} onClick={() => { setAuto(!auto); }} /></div>
-            </>
-          ) : <div className="pa-field"><label htmlFor="promise-text">Your promise</label><input id="promise-text" maxLength={60} value={promise} onChange={(e) => { setPromise(e.target.value); }} placeholder="Pizza night, their pick" /></div>}
-          <button type="button" className="pa-btn block" style={{ marginTop: 18 }} disabled={!ok} onClick={() => { onSave(cap, kind === "money" ? amount : 0, kind === "money" ? { kind: "money", destination: "card" } : { kind: "promise", title: promise.trim() }, kind === "money" && auto); }}>{kind === "money" ? <>Promise <Amt n={amount} /></> : "Promise it"}</button>
-        </>
-      )}
     </Sheet>
   );
 }
