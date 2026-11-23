@@ -37,7 +37,7 @@ export type PledgeReward = { kind: "money"; destination: "card" | "jar" | "fund"
 export type GoalTarget = { kind: "thread"; domain: string; thread: string } | { kind: "domain"; domain: string };
 export type PledgeGoal = GoalTarget & { grade: number };
 /** progress: from the reward's gate, or for a thread or subject from the curriculum. */
-export interface Pledge { id: string; childId: string; capability: string; gateName: string; goal?: PledgeGoal; progress?: { done: number; total: number }; amount: number; currency: string; note: string; reward?: PledgeReward; madeBy: string; madeAt: string; status: "open" | "due" | "paid" | "cancelled"; autoRelease?: boolean; dueAt?: string; paidAt?: string; bankRef?: string; paymentId?: string }
+export interface Pledge { id: string; childId: string; capability: string; gateName: string; goal?: PledgeGoal; progress?: { done: number; total: number }; amount: number; currency: string; note: string; reward?: PledgeReward; madeBy: string; madeAt: string; status: "open" | "due" | "paid" | "cancelled"; autoRelease?: boolean; dueAt?: string; paidAt?: string; bankRef?: string; paymentId?: string; cheers?: { by: string; at: string; from: string | null }[]; cheeredByMe?: boolean }
 
 /** The child's grade, subject by subject and thread by thread, for the reward picker. */
 export interface GoalsThread { code: string; name: string; done: number; total: number; lessons: { title: string; done: boolean }[] }
@@ -217,6 +217,11 @@ export class MoneyApi {
   /** The parent keeps a due pledge: a promise is marked kept; a money pledge moves the money. */
   releasePledge(childId: string, pledgeId: string): Promise<{ pledge: Pledge }> {
     return this.call(`/children/${encodeURIComponent(childId)}/pledges/${encodeURIComponent(pledgeId)}/release`, { method: "POST", body: "{}" });
+  }
+
+  /** A heart for something the child finished. No money moves; the child is told. */
+  cheer(childId: string, pledgeId: string): Promise<{ pledge: Pledge }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/pledges/${encodeURIComponent(pledgeId)}/cheer`, { method: "POST", body: "{}" });
   }
 
   cancelPledge(childId: string, pledgeId: string): Promise<{ pledge: Pledge }> {
