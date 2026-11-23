@@ -33,7 +33,17 @@ export interface TopUpRequest { id: string; childId: string; amount?: number; cu
 
 export interface Allowance { amount: number; currency: string; dayOfWeek: number; description: string; setBy: string; lastPaidOn?: string | null; next: { on: string; daysUntil: number } }
 export type PledgeReward = { kind: "money"; destination: "card" | "jar" | "fund"; jarId?: string } | { kind: "promise"; title: string };
-export interface Pledge { id: string; childId: string; capability: string; gateName: string; amount: number; currency: string; note: string; reward?: PledgeReward; madeBy: string; madeAt: string; status: "open" | "due" | "paid" | "cancelled"; autoRelease?: boolean; dueAt?: string; paidAt?: string; bankRef?: string; paymentId?: string }
+/** What a reward is for: one thread, or every thread in a subject, of the child's grade. */
+export type GoalTarget = { kind: "thread"; domain: string; thread: string } | { kind: "domain"; domain: string };
+export type PledgeGoal = GoalTarget & { grade: number };
+/** progress: from the reward's gate, or for a thread or subject from the curriculum. */
+export interface Pledge { id: string; childId: string; capability: string; gateName: string; goal?: PledgeGoal; progress?: { done: number; total: number }; amount: number; currency: string; note: string; reward?: PledgeReward; madeBy: string; madeAt: string; status: "open" | "due" | "paid" | "cancelled"; autoRelease?: boolean; dueAt?: string; paidAt?: string; bankRef?: string; paymentId?: string }
+
+/** The child's grade, subject by subject and thread by thread, for the reward picker. */
+export interface GoalsThread { code: string; name: string; done: number; total: number; lessons: { title: string; done: boolean }[] }
+export interface GoalsDomain { code: string; name: string; shortName: string; accent: string; done: number; total: number; threads: GoalsThread[] }
+/** pace: lessons a week lately, for "about a week" estimates; null with no recent lessons. */
+export interface Goals { childId: string; grade: number; domains: GoalsDomain[]; nextUp: { domain: string; thread: string } | null; pace: number | null }
 
 /**
  * One movement of money to the child, whoever moves it. due: owed (sent by the parent, or waiting for a permission).
@@ -192,6 +202,16 @@ export class MoneyApi {
 
   pledge(childId: string, capability: string, amount: number, note?: string, reward?: PledgeReward, autoRelease = false): Promise<{ pledge: Pledge }> {
     return this.call(`/children/${encodeURIComponent(childId)}/pledges`, { method: "POST", body: JSON.stringify({ capability, amount, ...(note ? { note } : {}), ...(reward ? { reward } : {}), ...(autoRelease ? { autoRelease: true } : {}) }) });
+  }
+
+  /** Every subject and thread of the child's grade with progress, and the thread to suggest first. */
+  goals(childId: string): Promise<Goals> {
+    return this.call(`/children/${encodeURIComponent(childId)}/goals`);
+  }
+
+  /** A reward for finishing a thread or a whole subject. */
+  pledgeGoal(childId: string, goal: GoalTarget, amount: number, reward: PledgeReward, autoRelease = false): Promise<{ pledge: Pledge }> {
+    return this.call(`/children/${encodeURIComponent(childId)}/pledges`, { method: "POST", body: JSON.stringify({ goal, amount, reward, ...(autoRelease ? { autoRelease: true } : {}) }) });
   }
 
   /** The parent keeps a due pledge: a promise is marked kept; a money pledge moves the money. */
