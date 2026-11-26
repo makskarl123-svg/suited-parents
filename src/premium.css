@@ -330,7 +330,7 @@
 .pa-dealcard .ic img, .pa-rulelist .ic img { width: 30px; }
 .pa-dealcard b, .pa-rulelist b { display: block; font-family: "DIN Round", sans-serif; font-size: 14px; color: var(--ink); }
 .pa-dealcard b i, .pa-rulelist b i { font-style: normal; color: var(--ink-3); }
-.pa-dealcard .pa-grow span, .pa-rulelist .pa-grow span { display: block; font-size: 13.5px; color: var(--ink-2); line-height: 1.35; margin-top: 1px; }
+.pa-dealcard .pa-grow > span, .pa-rulelist .pa-grow > span { display: block; font-size: 13.5px; color: var(--ink-2); line-height: 1.35; margin-top: 1px; }
 .pa-rulelist { display: grid; gap: 10px; margin-top: 12px; }
 .pa-agreed { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
 .pa-agreed span { height: 28px; padding: 0 11px; border-radius: 99px; display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 700; background: var(--wash); color: var(--ink-2); }
@@ -339,7 +339,7 @@
 .pa-askrules .hd { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #6F4EA1; }
 .pa-askrules .rl { margin-top: 6px; font-size: 14px; line-height: 1.4; }
 .pa-askrules .rl b { font-family: "DIN Round", sans-serif; margin-right: 6px; }
-.pa-askrules .rl span { color: var(--ink-2); }
+.pa-askrules .rl > span { color: var(--ink-2); }
 .pa-askrules .fb { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(111, 78, 161, .18); font-size: 14px; }
 .pa-askrules .pa-bar { background: var(--surface); }
 /* Cheer only: no money, a heart. */
