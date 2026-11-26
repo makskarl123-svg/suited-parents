@@ -4,6 +4,8 @@
  * check and save. Parents reward a thread (about a week) or a whole subject,
  * never a single lesson: convenience first, and paying per lesson rewards
  * rushing. The suggestion comes first; browsing everything is one tap away.
+ * The reward can be a cheer (no money: the parent sends a heart), money, or a treat
+ * in the parent's own words. Cheer comes first so it reads as normal, not second best.
  */
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, type CapabilitiesView, type Goals, type GoalsDomain, type GoalsThread, type GoalTarget, type MoneyApi, type PledgeReward } from "../api";
@@ -45,7 +47,7 @@ export function RewardPicker({ api, childId, name, view, guardianLabel, autoLimi
   const [size, setSize] = useState<Size>("thread");
   const [domainCode, setDomainCode] = useState("FL");
   const [pick, setPick] = useState<Pick | null>(null);
-  const [kind, setKind] = useState<"money" | "promise">("money");
+  const [kind, setKind] = useState<"cheer" | "money" | "promise">("money");
   const [amount, setAmount] = useState<number | null>(null);
   const [custom, setCustom] = useState(false);
   const [promise, setPromise] = useState("");
@@ -84,11 +86,11 @@ export function RewardPicker({ api, childId, name, view, guardianLabel, autoLimi
   const save = async (): Promise<void> => {
     if (!pick || !goals) return;
     const target: GoalTarget = pick.size === "thread" ? { kind: "thread", domain: pick.domain.code, thread: pick.thread.code } : { kind: "domain", domain: pick.domain.code };
-    const reward: PledgeReward = kind === "money" ? { kind: "money", destination: "card" } : { kind: "promise", title: promise.trim() };
+    const reward: PledgeReward = kind === "money" ? { kind: "money", destination: "card" } : kind === "cheer" ? { kind: "cheer" } : { kind: "promise", title: promise.trim() };
     setSaving(true); setSaveError(null);
     try {
       await api.pledgeGoal(childId, target, kind === "money" ? amount ?? 0 : 0, reward, sendsAuto);
-      onSaved(`${name} can see it now: ${kind === "money" ? aed(amount ?? 0) : promise.trim()} for ${titleOf(pick)}`);
+      onSaved(`${name} can see it now: ${kind === "money" ? aed(amount ?? 0) : kind === "cheer" ? "a cheer" : promise.trim()} for ${titleOf(pick)}`);
     } catch (e) { setSaveError(e instanceof Error ? e.message : "Couldn't save the reward"); setSaving(false); }
   };
 
@@ -165,8 +167,16 @@ export function RewardPicker({ api, childId, name, view, guardianLabel, autoLimi
     head = { back: () => { setStep(1); }, backLabel: "‹ Back", title: "What will you give?", sub: `For finishing ${titleOf(pick)} (${left} ${left === 1 ? "lesson" : "lessons"} to go${when(left, pace) ? `, ${when(left, pace)}` : ""}).` };
     body = (
       <>
-        <div className="pa-seg2" style={{ marginTop: 16 }} role="group" aria-label="Reward"><button type="button" aria-pressed={kind === "money"} onClick={() => { setKind("money"); }}>Money</button><button type="button" aria-pressed={kind === "promise"} onClick={() => { setKind("promise"); }}>A promise</button></div>
-        {kind === "money" ? (
+        <div className="pa-seg2" style={{ marginTop: 16 }} role="group" aria-label="Reward"><button type="button" aria-pressed={kind === "cheer"} onClick={() => { setKind("cheer"); }}>Cheer only</button><button type="button" aria-pressed={kind === "money"} onClick={() => { setKind("money"); }}>Money</button><button type="button" aria-pressed={kind === "promise"} onClick={() => { setKind("promise"); }}>A treat</button></div>
+        {kind === "cheer" ? (
+          <>
+            <div className="pa-cheercard">
+              <svg width="56" height="56" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" fill="#FF4B4B" /></svg>
+              <div><b className="din">No money, just you</b><p>When {name} finishes, you send a heart and Uncle Frank tells {name} how proud you are.</p></div>
+            </div>
+            <p className="pa-muted" style={{ margin: "12px 4px 0" }}>Many families cheer for most things and keep money for the big ones.</p>
+          </>
+        ) : kind === "money" ? (
           <>
             <div className="pa-eyebrow" style={{ margin: "20px 4px 6px" }}>Amount</div>
             <p className="pa-muted" style={{ margin: "0 4px" }}>Most parents choose around <Amt n={sizeOfPick.popular} /> for {pick.size === "thread" ? "a thread" : "a whole subject"}. Or set your own.</p>
@@ -189,17 +199,17 @@ export function RewardPicker({ api, childId, name, view, guardianLabel, autoLimi
         )}
       </>
     );
-    foot = <button type="button" className="pa-btn block" disabled={kind === "money" ? !amount : !promise.trim()} onClick={() => { setStep(3); }}>Continue</button>;
+    foot = <button type="button" className="pa-btn block" disabled={kind === "money" ? !amount : kind === "promise" ? !promise.trim() : false} onClick={() => { setStep(3); }}>Continue</button>;
   } else if (pick) {
     const pr = progressOf(pick); const left = pr.total - pr.done;
     const dots = Math.min(pr.total, 12); const on = Math.round((pr.done / Math.max(1, pr.total)) * dots);
-    const reward = kind === "money" ? <Amt n={amount ?? 0} /> : promise.trim();
+    const reward = kind === "money" ? <Amt n={amount ?? 0} /> : kind === "cheer" ? "A cheer" : promise.trim();
     head = { back: () => { setStep(2); }, backLabel: "‹ Back", title: "Check and save", sub: `This is what ${name} will see in the Money tab.` };
     body = (
       <>
         <div className="pa-kidcard" style={{ marginTop: 16 }}>
-          <div className="e">{who} promised</div>
-          <div className="n">{reward}</div>
+          <div className="e">{kind === "cheer" ? `${who === "You" ? "You'll" : `${who} will`} cheer` : `${who} promised`}</div>
+          <div className="n">{kind === "cheer" ? <span className="pa-heartline"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" fill="currentColor" /></svg> A heart from {who === "You" ? "you" : who}</span> : reward}</div>
           <div className="w">when you finish {titleOf(pick)} · {pr.done} of {pr.total} lessons</div>
           <div className="pa-dots">{Array.from({ length: dots }, (_, i) => <i key={i} className={i < on ? "on" : ""} />)}</div>
         </div>
@@ -208,7 +218,7 @@ export function RewardPicker({ api, childId, name, view, guardianLabel, autoLimi
           <div><span>Where</span><b>{pick.size === "thread" ? pick.domain.name : `${pick.domain.threads.length} threads`}</b></div>
           <div><span>Left to do</span><b>{joinBits(`${left} ${left === 1 ? "lesson" : "lessons"}`, when(left, pace))}</b></div>
           <div><span>Reward</span><b>{reward}</b></div>
-          <div><span>When {name} finishes</span><b>{kind === "promise" ? "You tap \"Kept it\"" : sendsAuto ? "Sent automatically" : "You send it with one tap"}</b></div>
+          <div><span>When {name} finishes</span><b>{kind === "promise" ? "You tap \"Kept it\"" : kind === "cheer" ? "You send a heart" : sendsAuto ? "Sent automatically" : "You send it with one tap"}</b></div>
         </div>
         <p className="pa-muted" style={{ margin: "14px 4px 0" }}>You can cancel a reward any time before {name} finishes it.</p>
         {saveError ? <div className="pa-err">{saveError}</div> : null}

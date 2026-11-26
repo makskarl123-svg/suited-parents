@@ -311,4 +311,42 @@
 .pa-summary div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
 .pa-summary div span { color: var(--ink-2); }
 .pa-summary div b { text-align: right; }
+/* Family Rules: picking rules, the agreement card the children see, the agreement in Settings, an ask against it. */
+.pa-ruleopt { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 14px 12px 12px; border-radius: 20px; background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--line); }
+.pa-ruleopt[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); }
+.pa-ruleopt .ic, .pa-rulehead .ic, .pa-dealcard .ic, .pa-rulelist .ic { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; flex: none; overflow: hidden; }
+.pa-ruleopt .ic img, .pa-rulehead .ic img { width: 36px; }
+.pa-ruleopt b, .pa-rulehead b { display: block; font-family: "DIN Round", sans-serif; font-size: 16px; }
+.pa-ruleopt small, .pa-rulehead small { display: block; color: var(--ink-2); font-size: 13px; margin-top: 2px; line-height: 1.35; }
+.pa-ruleopt .tick { width: 26px; height: 26px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 13px; font-weight: 800; color: #fff; box-shadow: inset 0 0 0 2px #C9D0CA; }
+.pa-ruleopt[aria-pressed="true"] .tick { background: var(--ink); box-shadow: none; }
+.pa-rulehead { display: flex; align-items: center; gap: 12px; }
+.pa-dealcard { background: #F1E4FF; border-radius: 24px; padding: 16px; box-shadow: 0 5px 0 var(--beetle); transform: rotate(-1deg); margin: 6px 6px 12px; }
+.pa-dealcard .e { font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #6F4EA1; }
+.pa-dealcard .rows { display: grid; gap: 8px; margin-top: 10px; }
+.pa-dealcard .row, .pa-rulelist .row { display: flex; align-items: center; gap: 11px; }
+.pa-dealcard .row { background: var(--surface); border-radius: 16px; padding: 8px 12px 8px 8px; }
+.pa-dealcard .ic, .pa-rulelist .ic { width: 38px; height: 38px; border-radius: 12px; }
+.pa-dealcard .ic img, .pa-rulelist .ic img { width: 30px; }
+.pa-dealcard b, .pa-rulelist b { display: block; font-family: "DIN Round", sans-serif; font-size: 14px; color: var(--ink); }
+.pa-dealcard b i, .pa-rulelist b i { font-style: normal; color: var(--ink-3); }
+.pa-dealcard .pa-grow span, .pa-rulelist .pa-grow span { display: block; font-size: 13.5px; color: var(--ink-2); line-height: 1.35; margin-top: 1px; }
+.pa-rulelist { display: grid; gap: 10px; margin-top: 12px; }
+.pa-agreed { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.pa-agreed span { height: 28px; padding: 0 11px; border-radius: 99px; display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 700; background: var(--wash); color: var(--ink-2); }
+.pa-agreed span.yes { background: var(--brand); color: var(--brand-ink); }
+.pa-askrules { margin-top: 12px; padding: 12px 14px; border-radius: 18px; background: #F1E4FF; }
+.pa-askrules .hd { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #6F4EA1; }
+.pa-askrules .rl { margin-top: 6px; font-size: 14px; line-height: 1.4; }
+.pa-askrules .rl b { font-family: "DIN Round", sans-serif; margin-right: 6px; }
+.pa-askrules .rl span { color: var(--ink-2); }
+.pa-askrules .fb { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(111, 78, 161, .18); font-size: 14px; }
+.pa-askrules .pa-bar { background: var(--surface); }
+/* Cheer only: no money, a heart. */
+.pa-prize.cheer { background: #FFDFE0; color: #C01D44; }
+.pa-cheercard { display: flex; gap: 14px; align-items: center; margin-top: 18px; padding: 16px; border-radius: 22px; background: var(--surface); }
+.pa-cheercard svg { flex: none; }
+.pa-cheercard b { font-size: 18px; display: block; }
+.pa-cheercard p { margin: 4px 0 0; font-size: 14px; color: var(--ink-2); line-height: 1.45; }
+.pa-heartline { display: inline-flex; align-items: center; gap: 8px; color: #C01D44; font-size: 26px; }
 @media (prefers-reduced-motion: reduce) { .pa *, .pa *::before, .pa *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

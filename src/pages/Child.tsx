@@ -423,6 +423,7 @@ function Recent({ acct, childName }: { acct: AccountView; childName: string }) {
 function rewardLine(p: Pledge, view: CapabilitiesView): string {
   const r = p.reward ?? { kind: "money", destination: "card" };
   if (r.kind === "promise") return r.title;
+  if (r.kind === "cheer") return "A cheer";
   const where = r.destination === "fund" ? "into the 18 Fund" : r.destination === "jar" ? `into the ${view.jars?.find((j) => j.id === r.jarId)?.name ?? "jar"} jar` : view.card ? "onto the card" : "to their account";
   return `AED ${whole(p.amount)} ${where}`;
 }
@@ -468,7 +469,7 @@ function Pledges({ view, childName, busy, onPledge, onCancel, onRelease }: { vie
       ))}
       {open.map((p) => (
         <div key={p.id} className="obj-row well" style={{ marginTop: 12, padding: "12px 14px" }}>
-          <Obj src={p.reward?.kind === "promise" ? "/money/art/trophy.webp" : p.reward?.destination === "fund" ? "/money/art/vault.webp" : p.reward?.destination === "jar" ? "/money/art/jar-coins.webp" : ART_GIFT} size={48} />
+          <Obj src={p.reward?.kind === "promise" || p.reward?.kind === "cheer" ? "/money/art/trophy.webp" : p.reward?.destination === "fund" ? "/money/art/vault.webp" : p.reward?.destination === "jar" ? "/money/art/jar-coins.webp" : ART_GIFT} size={48} />
           <div className="words" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
             <div><b style={{ fontSize: 14, color: "var(--ink)" }}>{rewardLine(p, view)}</b><div className="small">when {p.gateName} is done{p.autoRelease ? " · sent automatically" : ""}{p.madeBy ? ` · by ${who(p.madeBy)}` : ""}</div>{p.note ? <div className="small">"{p.note}"</div> : null}</div>
             <button type="button" className="link" disabled={busy} onClick={() => onCancel(p.id)}>Cancel</button>
