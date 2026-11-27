@@ -102,7 +102,7 @@ function DoRow({ view, childName, busy, onTopUp, onSetAllowance, onClearAllowanc
       </div>
       {open === "send" ? (
         <div className="sheet">
-          <div className="small">Goes from your account to {childName}'s. Suited never holds it.</div>
+          <div className="small">Goes from your account to {childName}'s.</div>
           <div className="actions" style={{ marginTop: 10 }}>
             {[10, 20, 50, 100].map((v) => <button type="button" key={v} className={`pill ${amount === String(v) ? "mint" : "grey"}`} style={{ cursor: "pointer", padding: "10px 14px", fontSize: 14 }} onClick={() => { setAmount(String(v)); }}>AED {v}</button>)}
             <label className="small" style={{ display: "flex", alignItems: "center", gap: 8 }}>AED <input className="limit num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Other" aria-label="Amount in AED" style={{ width: 96 }} /></label>
@@ -160,7 +160,7 @@ function MoneySetup({ view, childId, childName, mandates, busy, onAddAccount, on
     return (
       <div className="card">
         <div className="title">How money reaches {childName}</div>
-        <div className="small">You send each payment from your own banking app to {childName}'s account, then tap "I've sent it" below. {childName} confirms when it arrives. Suited never holds the money.</div>
+        <div className="small">You send each payment from your own banking app to {childName}'s account, then tap "I've sent it" below. {childName} confirms when it arrives.</div>
       </div>
     );
   }
@@ -169,7 +169,7 @@ function MoneySetup({ view, childId, childName, mandates, busy, onAddAccount, on
       <div className="title">How money reaches {childName}</div>
       {!payee ? (
         <>
-          <div className="small">Add {childName}'s own bank account. Money goes from your account straight to it; Suited never holds it. The details go to our licensed payments partner, and Suited keeps only the last four digits.</div>
+          <div className="small">Add {childName}'s own bank account. Money goes from your account straight to it. The details go to our licensed payments partner, and Suited keeps only the last four digits.</div>
           <input className="limit" value={holder} onChange={(e) => setHolder(e.target.value)} maxLength={70} placeholder="Name on the account" aria-label="Name on the account" style={{ width: "100%", marginTop: 12 }} />
           <input className="limit num" value={iban} onChange={(e) => setIban(e.target.value)} maxLength={40} placeholder="IBAN, e.g. AE07 0331 2345 6789 0123 456" aria-label="IBAN" style={{ width: "100%", marginTop: 10 }} />
           <div className="actions" style={{ marginTop: 10 }}>
@@ -423,6 +423,7 @@ function Recent({ acct, childName }: { acct: AccountView; childName: string }) {
 function rewardLine(p: Pledge, view: CapabilitiesView): string {
   const r = p.reward ?? { kind: "money", destination: "card" };
   if (r.kind === "promise") return r.title;
+  if (r.kind === "cheer") return "A cheer";
   const where = r.destination === "fund" ? "into the 18 Fund" : r.destination === "jar" ? `into the ${view.jars?.find((j) => j.id === r.jarId)?.name ?? "jar"} jar` : view.card ? "onto the card" : "to their account";
   return `AED ${whole(p.amount)} ${where}`;
 }
@@ -468,7 +469,7 @@ function Pledges({ view, childName, busy, onPledge, onCancel, onRelease }: { vie
       ))}
       {open.map((p) => (
         <div key={p.id} className="obj-row well" style={{ marginTop: 12, padding: "12px 14px" }}>
-          <Obj src={p.reward?.kind === "promise" ? "/money/art/trophy.webp" : p.reward?.destination === "fund" ? "/money/art/vault.webp" : p.reward?.destination === "jar" ? "/money/art/jar-coins.webp" : ART_GIFT} size={48} />
+          <Obj src={p.reward?.kind === "promise" || p.reward?.kind === "cheer" ? "/money/art/trophy.webp" : p.reward?.destination === "fund" ? "/money/art/vault.webp" : p.reward?.destination === "jar" ? "/money/art/jar-coins.webp" : ART_GIFT} size={48} />
           <div className="words" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
             <div><b style={{ fontSize: 14, color: "var(--ink)" }}>{rewardLine(p, view)}</b><div className="small">when {p.gateName} is done{p.autoRelease ? " · sent automatically" : ""}{p.madeBy ? ` · by ${who(p.madeBy)}` : ""}</div>{p.note ? <div className="small">"{p.note}"</div> : null}</div>
             <button type="button" className="link" disabled={busy} onClick={() => onCancel(p.id)}>Cancel</button>
@@ -512,7 +513,7 @@ function Pledges({ view, childName, busy, onPledge, onCancel, onRelease }: { vie
             <input className="limit" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} placeholder="e.g. Aquarium day, or Pizza night, your pick" aria-label="The promise" style={{ width: "100%", marginTop: 10 }} />
           )}
           <input className="limit" value={note} onChange={(e) => setNote(e.target.value)} maxLength={80} placeholder="A word for the card, e.g. For sticking with it" aria-label="Note" style={{ width: "100%", marginTop: 10 }} />
-          <div className="small" style={{ marginTop: 10 }}>{kind === "promise" ? `${childName} sees your words. When the strand is done you tap Kept it. No money moves.` : auto ? `Sent from your account to ${childName} the moment the strand completes. Suited never holds it.` : `When the strand is done you send it with one tap. Suited never holds it.`}</div>
+          <div className="small" style={{ marginTop: 10 }}>{kind === "promise" ? `${childName} sees your words. When the strand is done you tap Kept it. No money moves.` : auto ? `Sent from your account to ${childName} the moment the strand completes.` : `When the strand is done you send it with one tap.`}</div>
           <div className="actions">
             <button className="btn small" disabled={busy || !ok} onClick={() => { onPledge(cap, kind === "money" ? n : 0, note.trim(), reward, kind === "money" && auto); setAdding(false); setNote(""); setTitle(""); setAuto(false); }}>{kind === "promise" ? "Promise it" : `Pledge AED ${ok ? whole(n) : "…"}`}</button>
             <button className="btn ghost small" disabled={busy} onClick={() => { setAdding(false); }}>Cancel</button>
@@ -569,7 +570,7 @@ function Fund({ view, childName, busy, onAdd }: { view: CapabilitiesView; childN
           <div className="actions"><button className="btn small" disabled={busy} onClick={() => { setOpen(true); }}>Add to the fund</button></div>
         ) : (
           <div className="sheet">
-            <div className="small">Moves from your account to the fund at the bank. Suited never holds it.</div>
+            <div className="small">Moves from your account to the fund at the bank.</div>
             <div className="actions" style={{ marginTop: 10 }}>
               {[50, 100, 250, 500].map((v) => <button type="button" key={v} className={`pill ${amount === String(v) ? "mint" : "grey"}`} style={{ cursor: "pointer", padding: "10px 14px", fontSize: 14 }} onClick={() => { setAmount(String(v)); }}>AED {v}</button>)}
               <label className="small" style={{ display: "flex", alignItems: "center", gap: 8 }}>AED <input className="limit num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount in AED" style={{ width: 96 }} /></label>

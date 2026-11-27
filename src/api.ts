@@ -28,11 +28,51 @@ export interface Decline { id: string; at: string; amount: number; currency: str
 /** `source` "suited-record": Suited's own record of confirmed payments and the child's moves, never shown as a bank balance. */
 export interface AccountView { currency: string; balance: number; week: { spent: number; limit?: number; startedOn: string }; transactions: Transaction[]; declines?: Decline[]; source?: "bank" | "suited-record" }
 
+/** What a child's ask was for. Optional; older asks have none. */
+export type SpendCategory = "fun" | "essentials" | "gift" | "saving" | "other";
+
+/** The family's agreement as it speaks to one pending ask. funBudget counts only money that went through Suited. */
+export interface AskContext {
+  agreementVersion: number;
+  rules: { type: RuleType; title: string; sentence: string }[];
+  funBudget?: { period: { from: string; to: string }; budget: number; used: number; remaining: number; afterThis: number | null; source: "recorded" };
+}
+
 /** The child's ask for money. Yes becomes a payment; the amount can be changed on the way. */
-export interface TopUpRequest { id: string; childId: string; amount?: number; currency: string; note: string; at: string; status: "pending" | "approved" | "declined"; decidedBy?: string; decidedAt?: string; bankRef?: string; paymentId?: string }
+export interface TopUpRequest { id: string; childId: string; amount?: number; currency: string; note: string; category?: SpendCategory; at: string; status: "pending" | "approved" | "declined"; decidedBy?: string; decidedAt?: string; bankRef?: string; paymentId?: string; context?: AskContext | null }
+
+/* ─── Family Rules: the family's money agreement ─── */
+
+export type RuleType = "pocketMoney" | "parentsCover" | "funBudget" | "saving" | "bigPurchaseWait" | "earningExtra" | "giving" | "custom";
+/** appliesTo: the children a rule covers; every child in the family when absent. Amounts in dirhams. */
+export type Rule =
+  | { type: "pocketMoney"; amount: number; cadence: "weekly" | "monthly"; day: number; appliesTo?: string[] }
+  | { type: "parentsCover"; text: string; appliesTo?: string[] }
+  | { type: "funBudget"; amount: number; period: "monthly"; appliesTo?: string[] }
+  | { type: "saving"; text: string; jarId?: string; appliesTo?: string[] }
+  | { type: "bigPurchaseWait"; overAmount: number; hours: number; appliesTo?: string[] }
+  | { type: "earningExtra"; text: string; appliesTo?: string[] }
+  | { type: "giving"; text?: string; percent?: number; appliesTo?: string[] }
+  | { type: "custom"; title: string; text: string; appliesTo?: string[] };
+/** A saved rule, with its title and the plain sentence both apps show ("AED 50 every Sunday"). */
+export type RuleView = Rule & { id: string; title: string; sentence: string };
+export interface RuleTemplate { type: RuleType; title: string; helper: string; example: Rule }
+/** Version 0: the family is open but nothing is written yet. Saving a new version clears everyone's agreement. */
+export interface FamilyAgreement {
+  familyId: string;
+  version: number;
+  reviewDate: string | null;
+  updatedAt: string | null;
+  rules: RuleView[];
+  parents: { guardianId: string; label: string; agreedAt: string | null }[];
+  children: { childId: string; displayName: string; agreedAt: string | null }[];
+  everyoneAgreed: boolean;
+  history: { version: number; savedAt: string; rules: number }[];
+}
 
 export interface Allowance { amount: number; currency: string; dayOfWeek: number; description: string; setBy: string; lastPaidOn?: string | null; next: { on: string; daysUntil: number } }
-export type PledgeReward = { kind: "money"; destination: "card" | "jar" | "fund"; jarId?: string } | { kind: "promise"; title: string };
+/** cheer: no money and no promise; when the child finishes, the parent sends a heart. */
+export type PledgeReward = { kind: "money"; destination: "card" | "jar" | "fund"; jarId?: string } | { kind: "promise"; title: string } | { kind: "cheer" };
 /** What a reward is for: one thread, or every thread in a subject, of the child's grade. */
 export type GoalTarget = { kind: "thread"; domain: string; thread: string } | { kind: "domain"; domain: string };
 export type PledgeGoal = GoalTarget & { grade: number };
@@ -245,5 +285,29 @@ export class MoneyApi {
 
   audit(childId: string): Promise<{ childId: string; entries: AuditEntry[] }> {
     return this.call(`/children/${encodeURIComponent(childId)}/audit`);
+  }
+
+  /** The family this parent writes rules with; null before it is opened. */
+  myFamily(): Promise<{ family: FamilyAgreement | null }> {
+    return this.call("/me/family");
+  }
+
+  /** Open the family once (safe to repeat). 409 while no child is connected. */
+  openFamily(): Promise<{ family: FamilyAgreement }> {
+    return this.call("/me/family", { method: "POST", body: "{}" });
+  }
+
+  agreementTemplates(familyId: string): Promise<{ templates: RuleTemplate[] }> {
+    return this.call(`/families/${encodeURIComponent(familyId)}/agreement/templates`);
+  }
+
+  /** Save a new version of the agreement. Everyone agrees again; the parent who saves it already has. */
+  saveAgreement(familyId: string, rules: Rule[], reviewDate?: string): Promise<{ family: FamilyAgreement }> {
+    return this.call(`/families/${encodeURIComponent(familyId)}/agreement`, { method: "PUT", body: JSON.stringify({ rules, ...(reviewDate ? { reviewDate } : {}) }) });
+  }
+
+  /** This parent agrees to the version they read. */
+  agreeToAgreement(familyId: string, version: number): Promise<{ family: FamilyAgreement }> {
+    return this.call(`/families/${encodeURIComponent(familyId)}/agreement/ack`, { method: "POST", body: JSON.stringify({ version }) });
   }
 }

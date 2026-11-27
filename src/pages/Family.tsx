@@ -8,9 +8,10 @@
  * one endpoint in its contract.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, type Bank, type PayeeCheck, type CapabilitiesView, type ChildSummary, type Mandate, type MoneyApi, type Payment, type Pledge, type TopUpRequest } from "../api";
+import { ApiError, type AskContext, type Bank, type PayeeCheck, type CapabilitiesView, type ChildSummary, type FamilyAgreement, type Mandate, type MoneyApi, type Payment, type Pledge, type TopUpRequest } from "../api";
 import { aed, Amt, Dirham, Txt } from "../dirham";
 import { RewardPicker } from "./RewardPicker";
+import { AgreementCard, RulesBuilder } from "./Rules";
 
 type Tab = "today" | "money" | "rewards" | "settings";
 const ART = { coins: "/money/art/coin-stack.webp", gift: "/money/art/gift.webp", trophy: "/money/art/trophy.webp", jar: "/money/art/jar-coins.webp", vault: "/money/art/vault.webp", piggy: "/money/art/piggy.webp", key: "/money/art/key.webp", metro: "/money/art/metro.webp", padlock: "/money/art/padlock.webp", headphones: "/money/art/headphones.webp" };
@@ -26,7 +27,10 @@ const PANELS = ["#1CB0F6", "#FF9600", "#CE82FF", "#58CC02", "#2B70C9", "#FFC800"
 const panelFor = (key: string): string => { let h = 0; for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return PANELS[h % PANELS.length] ?? "#1CB0F6"; };
 /** The art tile on a colour panel: yellow, unless the panel already is. */
 const tileFor = (panel: string): string => (panel === "#FFC800" ? "#1CB0F6" : "#FFC800");
-const artFor = (p: Pledge): string => (p.reward?.kind === "promise" ? ART.gift : p.status === "open" ? ART.jar : ART.trophy);
+const artFor = (p: Pledge): string => (p.reward?.kind === "promise" ? ART.gift : p.reward?.kind === "cheer" ? ART.trophy : p.status === "open" ? ART.jar : ART.trophy);
+/** A reward in words: the promise, "a cheer", or the amount. */
+const prizeOf = (p: Pledge): React.ReactNode => (p.reward?.kind === "promise" ? `“${p.reward.title}”` : p.reward?.kind === "cheer" ? "a cheer" : <Amt n={p.amount} />);
+const HeartIcon = ({ size = 14 }: { size?: number }) => <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" fill="currentColor" /></svg>;
 const day = (iso: string): string => {
   const d = new Date(iso); if (Number.isNaN(d.getTime())) return "";
   const a = new Date(); a.setHours(0, 0, 0, 0); const b = new Date(d); b.setHours(0, 0, 0, 0);
@@ -58,6 +62,10 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
   const [sheet, setSheet] = useState<null | "give" | "send" | "pocket" | "reward" | "permission">(null);
   const [detail, setDetail] = useState<string | null>(null);
   const [celebration, setCelebration] = useState<{ amount: number; line: string } | null>(null);
+  // Family Rules: undefined while loading, null before the family is opened.
+  const [family, setFamily] = useState<FamilyAgreement | null | undefined>(undefined);
+  const [me, setMe] = useState<string | null>(null);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [flying, setFlying] = useState(0);
   const seen = useRef<Map<string, Payment["status"]>>(new Map());
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -79,7 +87,16 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
       setView(v); setError(null);
     } catch (e) { setError(e instanceof ApiError && e.status === 403 ? "You are not a guardian of this child." : e instanceof Error ? e.message : "Something went wrong"); }
     try { setMandates((await api.mandates()).mandates); } catch { setMandates([]); }
+    try { setFamily((await api.myFamily()).family); } catch { setFamily(null); }
   }, [api, childId, name]);
+
+  useEffect(() => { void api.myChildren().then((r) => { setMe(r.guardianId); }, () => { setMe(null); }); }, [api]);
+
+  /** Open the builder; the family is opened first if this is the first time. */
+  const writeRules = (): void => {
+    if (family) { setRulesOpen(true); return; }
+    void run("rules", async () => { setFamily((await api.openFamily()).family); setRulesOpen(true); });
+  };
 
   useEffect(() => { seen.current = new Map(); setView(null); void load(); }, [load]);
 
@@ -141,10 +158,10 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
           </div>
           {error ? <div className="pa-err">{error}</div> : null}
           {!view && !error ? <div className="pa-card pa-muted">Loading…</div> : null}
-          {view && tab === "today" ? <Today view={view} name={name} colour={colour} total={total} how={how} pending={pending} busy={busy} run={run} afterSend={afterSend} say={say} api={api} childId={childId} onSetup={() => { setTab("settings"); window.scrollTo({ top: 0 }); }} stopped={stopped} onReapprove={() => { setSheet("permission"); }} onAllPayments={() => { setTab("money"); window.scrollTo({ top: 0 }); }} /> : null}
+          {view && tab === "today" ? <Today view={view} name={name} colour={colour} total={total} how={how} pending={pending} busy={busy} run={run} afterSend={afterSend} say={say} api={api} childId={childId} onSetup={() => { setTab("settings"); window.scrollTo({ top: 0 }); }} stopped={stopped} onReapprove={() => { setSheet("permission"); }} onAllPayments={() => { setTab("money"); window.scrollTo({ top: 0 }); }} family={family} onWriteRules={writeRules} /> : null}
           {view && tab === "money" ? <Money view={view} name={name} colour={colour} total={total} how={how} paused={!!paused} flying={flying} onSend={() => { setSheet("send"); }} onPocket={() => { setSheet("pocket"); }} /> : null}
           {view && tab === "rewards" ? <Rewards view={view} name={name} onNew={() => { setSheet("reward"); }} onOpen={setDetail} /> : null}
-          {view && tab === "settings" ? <Settings view={view} name={name} api={api} childId={childId} mine={mine} busy={busy} run={run} onPermission={() => { setSheet("permission"); }} guardianLabel={guardianLabel} onSwitchGuardian={onSwitchGuardian} onConnectChild={onConnectChild} /> : null}
+          {view && tab === "settings" ? <Settings view={view} name={name} api={api} childId={childId} mine={mine} busy={busy} run={run} onPermission={() => { setSheet("permission"); }} guardianLabel={guardianLabel} onSwitchGuardian={onSwitchGuardian} onConnectChild={onConnectChild} family={family} me={me} onWriteRules={writeRules} onAgree={(fam) => void run("agree", async () => { setFamily((await api.agreeToAgreement(fam.familyId, fam.version)).family); return "You agreed to your family's rules"; })} /> : null}
         </main>
         <nav className="pa-tabs" aria-label="Sections">
           {(["today", "money", "give", "rewards", "settings"] as const).map((t) => t === "give" ? (
@@ -164,6 +181,7 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
       {sheet === "reward" && view ? <RewardPicker api={api} childId={childId} name={name} view={view} guardianLabel={guardianLabel} autoLimit={active ? active.limits.maxPerPayment : null} onClose={() => { setSheet(null); }} onSaved={(msg) => { setSheet(null); setTab("rewards"); say(msg); void load(); }} /> : null}
       {sheet === "permission" && view ? <PermissionSheet name={name} onClose={() => { setSheet(null); }} onStart={(pp, pw, wk) => { setSheet(null); void run("mandate", async () => { const r = await api.createMandate([childId], pp, pw, wk); window.open(r.mandate.authorisationUrl, "_blank", "noopener"); return "Your bank has opened in a new tab. Approve there, then come back."; }); }} /> : null}
 
+      {rulesOpen && family ? <RulesBuilder api={api} kids={kids} family={family} onClose={() => { setRulesOpen(false); }} onSaved={(fam) => { setFamily(fam); setRulesOpen(false); setTab("settings"); say(`Saved. ${kids.length === 1 ? `${name} sees it` : "Your children see it"} and can agree in the Suited app`); }} /> : null}
       {toast ? <div className="pa-toast" role="status"><span className="pa-grow"><Txt s={toast.msg} /></span>{toast.undo ? <button type="button" onClick={() => { toast.undo?.(); setToast(null); }}>Undo</button> : null}</div> : null}
       {celebration ? <Celebrate name={name} amount={celebration.amount} line={celebration.line} onClose={() => { setCelebration(null); }} /> : null}
     </div>
@@ -197,7 +215,7 @@ function Panel({ colour, art, title, line, done, total, height }: { colour: stri
   );
 }
 
-function Today({ view, name, colour, total, how, pending, busy, run, afterSend, say, api, childId, onSetup, stopped, onReapprove, onAllPayments }: { view: CapabilitiesView; name: string; colour: string; total: number; how: How; pending: Mandate | undefined; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; afterSend: (p: Payment | undefined) => void; say: (m: string, undo?: () => void) => void; api: MoneyApi; childId: string; onSetup: () => void; stopped: boolean; onReapprove: () => void; onAllPayments: () => void }) {
+function Today({ view, name, colour, total, how, pending, busy, run, afterSend, say, api, childId, onSetup, stopped, onReapprove, onAllPayments, family, onWriteRules }: { view: CapabilitiesView; name: string; colour: string; total: number; how: How; pending: Mandate | undefined; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; afterSend: (p: Payment | undefined) => void; say: (m: string, undo?: () => void) => void; api: MoneyApi; childId: string; onSetup: () => void; stopped: boolean; onReapprove: () => void; onAllPayments: () => void; family: FamilyAgreement | null | undefined; onWriteRules: () => void }) {
   // Reading the child's own account (the one money is sent to): money landing is spotted, nobody needs to confirm.
   const reading = view.bank?.status === "active" && !!view.bank.balance && view.bank.matchesAccount !== false;
   const due = (view.pledges ?? []).filter((p) => p.status === "due");
@@ -225,7 +243,7 @@ function Today({ view, name, colour, total, how, pending, busy, run, afterSend, 
           <span className="pill"><Amt n={Math.round(saved)} />&nbsp;saved</span>
           <span className="pill">{lessons} {lessons === 1 ? "lesson" : "lessons"}</span>
         </div>
-        <div className="pa-trust"><Lock />Bank to bank · Suited never holds money</div>
+        <div className="pa-trust"><Lock />You set the limits · Stop any time</div>
       </div>
 
       <div className="pa-section"><span>{count ? `Your call · ${count}` : "Your call"}</span>{count ? <small>Takes a minute</small> : null}</div>
@@ -236,6 +254,15 @@ function Today({ view, name, colour, total, how, pending, busy, run, afterSend, 
           <div className="pa-say">Approve {name}'s new account <em>at your bank</em></div>
           <div className="pa-why">{name}'s account changed, so your bank needs to approve sending to the new one. Until then, you send payments yourself.</div>
           <div className="pa-acts"><button type="button" className="pa-btn" onClick={onReapprove}>Turn back on</button></div>
+        </article>
+      ) : null}
+
+      {family !== undefined && (!family || family.version === 0) && !setupStep ? (
+        <article className="pa-post">
+          <Seen name={name} child={false} when="Takes two minutes" />
+          <div className="pa-say">Agree your family's <em>money rules</em></div>
+          <div className="pa-why">Pocket money, fun money, big buys. Agree them once with {name}, and every ask shows you what you all said.</div>
+          <div className="pa-acts"><button type="button" className="pa-btn" disabled={busy === "rules"} onClick={onWriteRules}>Write our rules</button></div>
         </article>
       ) : null}
 
@@ -265,14 +292,15 @@ function Today({ view, name, colour, total, how, pending, busy, run, afterSend, 
         return (
           <article key={p.id} className="pa-post">
             <Seen name={name} child when={p.dueAt ? day(p.dueAt) : "just now"} />
-            <div className="pa-say"><span className="pa-av sm" style={{ background: colour }}>{name.slice(0, 1).toUpperCase()}</span>{name} <em>finished</em> {p.gateName} <em>· you promised</em> {p.reward?.kind === "promise" ? `“${p.reward.title}”` : <Amt n={p.amount} />}</div>
+            <div className="pa-say"><span className="pa-av sm" style={{ background: colour }}>{name.slice(0, 1).toUpperCase()}</span>{name} <em>finished</em> {p.gateName} <em>{p.reward?.kind === "cheer" ? "· you said you'd cheer" : "· you promised"}</em>{p.reward?.kind === "cheer" ? null : <> {prizeOf(p)}</>}</div>
             <Panel colour={panel} art={ART.trophy} title={p.gateName} line={tot ? `${tot} of ${tot} lessons` : "Finished"} done={tot} total={tot} />
             <div className="pa-acts"><button type="button" className="pa-btn" disabled={busy === p.id} onClick={() => void run(p.id, async () => {
               const r = await api.releasePledge(childId, p.id);
               if (r.pledge.reward?.kind === "promise") return `Kept: ${r.pledge.reward.title}`;
+              if (r.pledge.reward?.kind === "cheer") return `You sent ${name} a heart`;
               const pays = (await api.payments(childId)).payments;
               afterSend(pays.find((x) => x.id === r.pledge.paymentId));
-            })}>{p.reward?.kind === "promise" ? "Kept it" : how === "manual" ? <>I'll send <Amt n={p.amount} /></> : <>Send <Amt n={p.amount} /></>}</button>
+            })}>{p.reward?.kind === "promise" ? "Kept it" : p.reward?.kind === "cheer" ? <><HeartIcon size={16} />&nbsp;Send a heart</> : how === "manual" ? <>I'll send <Amt n={p.amount} /></> : <>Send <Amt n={p.amount} /></>}</button>
               <CheerButton p={p} name={name} busy={busy} onCheer={() => void run(`cheer-${p.id}`, async () => { await api.cheer(childId, p.id); return `${name} got your heart`; })} /></div>
           </article>
         );
@@ -336,7 +364,7 @@ function RecentPost({ p, name }: { p: Payment; name: string }) {
 function FrankNote({ name, lessons, saved, next, cap }: { name: string; lessons: number; saved: number; next: Pledge | undefined; cap: Progressed | undefined }) {
   const left = cap?.progress ? Math.max(0, cap.progress.total - cap.progress.done) : null;
   const proud = lessons > 0 ? `${name} has finished ${lessons} ${lessons === 1 ? "lesson" : "lessons"}${saved > 0 ? ` and has ${aed(saved)} put away in jars` : ""}.` : `${name} hasn't started a lesson yet. The first one takes about five minutes.`;
-  const coming = next && left !== null ? ` ${left === 1 ? "One lesson" : `${left} lessons`} left in ${next.gateName}, then ${next.reward?.kind === "promise" ? "your promise is due" : `${aed(next.amount)} comes ${name}'s way`}.` : next ? ` Next up: ${next.gateName}.` : " Set a reward for what's next and I'll keep cheering.";
+  const coming = next && left !== null ? ` ${left === 1 ? "One lesson" : `${left} lessons`} left in ${next.gateName}, then ${next.reward?.kind === "promise" ? "your promise is due" : next.reward?.kind === "cheer" ? "you get to cheer" : `${aed(next.amount)} comes ${name}'s way`}.` : next ? ` Next up: ${next.gateName}.` : " Set a reward for what's next and I'll keep cheering.";
   return (
     <div className="pa-frank"><img src={FRANK} alt="Uncle Frank" />
       <div className="bub"><b>Uncle Frank · this week</b><p><Txt s={proud + coming} /></p></div>
@@ -352,10 +380,30 @@ function AskCard({ r, name, colour, busy, onDecide }: { r: TopUpRequest; name: s
     <article className="pa-post">
       <Seen name={name} child when={day(r.at)} />
       <div className="pa-say"><span className="pa-av sm" style={{ background: colour }}>{name.slice(0, 1).toUpperCase()}</span>{name} <em>asked for</em> {r.amount !== undefined ? <Amt n={r.amount} /> : "money"} <em>for</em> {r.note}</div>
+      {r.context && r.context.rules.length ? <AskRules ctx={r.context} amount={amount} /> : null}
       <div className="pa-why">{r.amount !== undefined ? "Change the amount if you like." : `${name} left the amount to you.`}</div>
       <div className="pa-amounts" role="group" aria-label="Amount">{options.map((v) => <button key={v} type="button" className="pa-amt" aria-pressed={amount === v} onClick={() => { setAmount(v); }}>{v}</button>)}</div>
       <div className="pa-acts"><button type="button" className="pa-btn grow" disabled={busy} onClick={() => { onDecide(true, amount); }}>Yes, <Amt n={amount} /></button><button type="button" className="pa-btn ghost" disabled={busy} onClick={() => { onDecide(false); }}>Not now</button></div>
     </article>
+  );
+}
+
+/** What the family agreed, beside an ask: the rule in words and, for fun money, what's left this month. Context, never a block. */
+function AskRules({ ctx, amount }: { ctx: AskContext; amount: number }) {
+  const fb = ctx.funBudget;
+  const after = fb ? Math.round((fb.remaining - amount) * 100) / 100 : null;
+  return (
+    <div className="pa-askrules">
+      <div className="hd"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 11l3 3 8-8" /><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9" /></svg>Your family agreed</div>
+      {ctx.rules.map((x) => <div key={x.type} className="rl"><b>{x.title}</b><span><Txt s={x.sentence} /></span></div>)}
+      {fb ? (
+        <div className="fb">
+          <div className="pa-row" style={{ justifyContent: "space-between" }}><span className="din"><Amt n={fb.used} /> of <Amt n={fb.budget} /> used</span><b className="din"><Amt n={fb.remaining} /> left</b></div>
+          <div className="pa-bar" style={{ ["--c" as string]: "#CE82FF" }}><i style={{ width: `${Math.min(100, Math.round((fb.used / Math.max(1, fb.budget)) * 100))}%` }} /></div>
+          <div className="pa-small" style={{ marginTop: 6 }}>{after === null ? "" : after >= 0 ? <>Yes would leave <Amt n={after} /> for the month.</> : <>Yes would go <Amt n={-after} /> over this month's fun money.</>} Counts money sent through Suited this month.</div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -366,9 +414,9 @@ function LearnCard({ p, cap, name }: { p: Pledge; cap: Progressed | undefined; n
   return (
     <article className="pa-post">
       <Seen name={name} child when={`set ${day(p.madeAt).toLowerCase() === "today" ? "today" : day(p.madeAt)}`} />
-      <div className="pa-say">{p.reward?.kind === "promise" ? `“${p.reward.title}”` : <Amt n={p.amount} />} <em>when {name} finishes</em> {p.gateName}</div>
+      <div className="pa-say">{p.reward?.kind === "cheer" ? <>A cheer <em>when {name} finishes</em> {p.gateName}</> : <>{prizeOf(p)} <em>when {name} finishes</em> {p.gateName}</>}</div>
       <Panel colour={panelFor(p.capability)} art={artFor(p)} title={p.gateName} line={totalL ? `${done} of ${totalL} lessons` : "Not started"} done={done} total={totalL} height={136} />
-      <div className="pa-why">{totalL ? (left === 1 ? "One lesson to go." : `${left} lessons to go.`) : ""}{p.reward?.kind === "promise" ? " You tap Kept it when you've done it." : p.autoRelease ? " Sent automatically when it's done." : " You send it with one tap when it's done."}</div>
+      <div className="pa-why">{totalL ? (left === 1 ? "One lesson to go." : `${left} lessons to go.`) : ""}{p.reward?.kind === "promise" ? " You tap Kept it when you've done it." : p.reward?.kind === "cheer" ? " You send a heart when it's done." : p.autoRelease ? " Sent automatically when it's done." : " You send it with one tap when it's done."}</div>
     </article>
   );
 }
@@ -406,7 +454,7 @@ function Money({ view, name, colour, total, how, paused, flying, onSend, onPocke
           <div className="pa-track"><div className="pa-coin" ref={coin}><Dirham /></div></div>
           <div className="pa-node"><div className="bubble" style={{ background: colour }}>{name.slice(0, 1)}</div>{view.payee ? view.payee.label : `${name}'s account`}</div>
         </div>
-        <div className="pa-muted" style={{ textAlign: "center" }}>{how === "auto" ? "Bank to bank, within the limits you approved. Suited never holds it." : `You send from your banking app; ${name} confirms when it lands. Suited never holds it.`}</div>
+        <div className="pa-muted" style={{ textAlign: "center" }}>{how === "auto" ? "Bank to bank, within the limits you approved." : `You send from your banking app; ${name} confirms when it lands.`}</div>
         <button type="button" className="pa-btn block" style={{ marginTop: 14 }} onClick={onSend}>Send money</button>
       </div>
       <div className="pa-card">
@@ -451,6 +499,7 @@ function PayRow({ p, name }: { p: Payment; name: string }) {
 /** The reward itself, set apart from what it's for: a green pill for money, a yellow one for a promise. */
 function Prize({ p }: { p: Pledge }) {
   const promise = p.reward?.kind === "promise";
+  if (p.reward?.kind === "cheer") return <span className="pa-prize cheer"><HeartIcon /><span className="t">A cheer</span></span>;
   return (
     <span className={`pa-prize ${promise ? "promise" : "money"}`}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="5" rx="1" /><path d="M5 13v7h14v-7M12 8v12M12 8S10.5 3.5 8 4.5 9 8 12 8zm0 0s1.5-4.5 4-3.5S15 8 12 8z" /></svg>
@@ -461,6 +510,7 @@ function Prize({ p }: { p: Pledge }) {
 
 /** "Sent automatically when finished", or what happens next for this reward. */
 function rewardLine(p: Pledge): string {
+  if (p.reward?.kind === "cheer") return p.status === "paid" ? "You cheered" : p.status === "due" ? "Finished. Send your heart from Today" : "You send a heart when finished";
   return p.status === "paid" ? (p.reward?.kind === "promise" ? "Kept" : "Sent") : p.status === "due" ? "Finished. It's on Today for you" : p.reward?.kind === "promise" ? "You tap Kept it when you've done it" : p.autoRelease ? "Sent automatically when finished" : "You send it with one tap when finished";
 }
 
@@ -497,8 +547,9 @@ function Rewards({ view, name, onNew, onOpen }: { view: CapabilitiesView; name: 
   );
 }
 
-/** Cheer: a heart for something the child finished, no money involved. Each grown-up sends one. */
+/** Cheer: a heart for something the child finished, no money involved. Each grown-up sends one. A cheer-only reward's own button is already the heart. */
 function CheerButton({ p, name, busy, onCheer }: { p: Pledge; name: string; busy: string | null; onCheer: () => void }) {
+  if (p.reward?.kind === "cheer") return null;
   const done = !!p.cheeredByMe;
   return (
     <button type="button" className="pa-cheer" aria-pressed={done} disabled={done || busy === `cheer-${p.id}`} onClick={onCheer} aria-label={done ? `You sent ${name} a heart` : `Send ${name} a heart`}>
@@ -520,13 +571,13 @@ function RewardDetail({ view, name, id, guardianLabel, busy, onClose, onCancel, 
       <h3 className="c">What {name} sees</h3>
       <div className="pa-muted c">In {name}'s Money tab</div>
       <div className="pa-kidcard">
-        <div className="e">{who} promised</div>
-        <div className="n">{p.reward?.kind === "promise" ? p.reward.title : <Amt n={p.amount} />}</div>
+        <div className="e">{p.reward?.kind === "cheer" ? `${who === "You" ? "You'll" : `${who} will`} cheer` : `${who} promised`}</div>
+        <div className="n">{p.reward?.kind === "promise" ? p.reward.title : p.reward?.kind === "cheer" ? <span className="pa-heartline"><HeartIcon size={28} /> A heart from {who === "You" ? "you" : who}</span> : <Amt n={p.amount} />}</div>
         <div className="w">when you finish {p.gateName}{tot ? ` · ${done} of ${tot}` : ""}</div>
         {tot ? <div className="pa-dots">{Array.from({ length: Math.min(tot, 12) }, (_, i) => <i key={i} className={i < Math.round((done / tot) * Math.min(tot, 12)) ? "on" : ""} />)}</div> : null}
       </div>
       <div className="pa-muted c">{rewardLine(p)}.</div>
-      {p.status === "due" || p.status === "paid" ? (
+      {(p.status === "due" || p.status === "paid") && p.reward?.kind !== "cheer" ? (
         <div className="pa-row" style={{ justifyContent: "center", marginTop: 14 }}><CheerButton p={p} name={name} busy={busy} onCheer={() => { onCheer(p.id); }} /></div>
       ) : null}
       {p.status === "open" ? <button type="button" className="pa-btn danger block" style={{ marginTop: 16 }} disabled={busy === `cancel-${p.id}`} onClick={() => { onCancel(p.id); }}>Cancel this reward</button> : null}
@@ -603,7 +654,7 @@ function BankBalance({ view, name, api, childId, busy, run }: { view: Capabiliti
   );
 }
 
-function Settings({ view, name, api, childId, mine, busy, run, onPermission, guardianLabel, onSwitchGuardian, onConnectChild }: { view: CapabilitiesView; name: string; api: MoneyApi; childId: string; mine: Mandate[]; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; onPermission: () => void; guardianLabel: string; onSwitchGuardian?: () => void; onConnectChild?: () => void }) {
+function Settings({ view, name, api, childId, mine, busy, run, onPermission, guardianLabel, onSwitchGuardian, onConnectChild, family, me, onWriteRules, onAgree }: { view: CapabilitiesView; name: string; api: MoneyApi; childId: string; mine: Mandate[]; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; onPermission: () => void; guardianLabel: string; onSwitchGuardian?: () => void; onConnectChild?: () => void; family: FamilyAgreement | null | undefined; me: string | null; onWriteRules: () => void; onAgree: (f: FamilyAgreement) => void }) {
   const [holder, setHolder] = useState(name);
   const [iban, setIban] = useState("");
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
@@ -622,6 +673,7 @@ function Settings({ view, name, api, childId, mine, busy, run, onPermission, gua
   return (
     <div className="pa-stack">
       <h1 className="pa-h1">Settings</h1>
+      {family !== undefined ? <AgreementCard family={family} me={me} busy={busy === "agree" || busy === "rules"} onWrite={onWriteRules} onAgree={() => { if (family) onAgree(family); }} /> : null}
       <div className="pa-card">
         <span className="pa-eyebrow">{name}'s account</span>
         {view.payee && !changing ? (
