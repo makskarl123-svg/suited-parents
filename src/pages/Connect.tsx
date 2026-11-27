@@ -119,7 +119,7 @@ export function Connect({ api, onConnected, onCancel, first }: { api: MoneyApi; 
                 <h2>What Suited Money does</h2>
                 <ul>
                   <li>{step.name} keeps learning in Suited. Finishing lessons can unlock rewards that <b>you</b> choose and approve.</li>
-                  <li>Money goes from your bank to {step.name}'s own bank account, sent by you or, if you allow it at your bank, automatically within limits you set. <b>Suited never holds money.</b></li>
+                  <li>Money goes from your bank to {step.name}'s own bank account, sent by you or, if you allow it at your bank, automatically within limits you set.</li>
                   <li>{step.name} can ask you for money, plan it in jars and note what they spend. {step.name} can't send money anywhere.</li>
                 </ul>
                 <h2>What you control</h2>
