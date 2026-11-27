@@ -243,7 +243,7 @@ function Today({ view, name, colour, total, how, pending, busy, run, afterSend, 
           <span className="pill"><Amt n={Math.round(saved)} />&nbsp;saved</span>
           <span className="pill">{lessons} {lessons === 1 ? "lesson" : "lessons"}</span>
         </div>
-        <div className="pa-trust"><Lock />Bank to bank · Suited never holds money</div>
+        <div className="pa-trust"><Lock />You set the limits · Stop any time</div>
       </div>
 
       <div className="pa-section"><span>{count ? `Your call · ${count}` : "Your call"}</span>{count ? <small>Takes a minute</small> : null}</div>
@@ -453,7 +453,7 @@ function Money({ view, name, colour, total, how, paused, flying, onSend, onPocke
           <div className="pa-track"><div className="pa-coin" ref={coin}><Dirham /></div></div>
           <div className="pa-node"><div className="bubble" style={{ background: colour }}>{name.slice(0, 1)}</div>{view.payee ? view.payee.label : `${name}'s account`}</div>
         </div>
-        <div className="pa-muted" style={{ textAlign: "center" }}>{how === "auto" ? "Bank to bank, within the limits you approved. Suited never holds it." : `You send from your banking app; ${name} confirms when it lands. Suited never holds it.`}</div>
+        <div className="pa-muted" style={{ textAlign: "center" }}>{how === "auto" ? "Bank to bank, within the limits you approved." : `You send from your banking app; ${name} confirms when it lands.`}</div>
         <button type="button" className="pa-btn block" style={{ marginTop: 14 }} onClick={onSend}>Send money</button>
       </div>
       <div className="pa-card">
