@@ -158,7 +158,7 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
       </div>
 
       {sheet === "give" && view ? <GiveSheet view={view} name={name} how={how} onClose={() => { setSheet(null); }} onPick={(s) => { setSheet(s); }} /> : null}
-      {detail && view ? <RewardDetail view={view} name={name} id={detail} guardianLabel={guardianLabel} busy={busy} onClose={() => { setDetail(null); }} onCancel={(id) => { setDetail(null); void run(`cancel-${id}`, async () => { await api.cancelPledge(childId, id); return "Reward cancelled"; }); }} /> : null}
+      {detail && view ? <RewardDetail view={view} name={name} id={detail} guardianLabel={guardianLabel} busy={busy} onClose={() => { setDetail(null); }} onCancel={(id) => { setDetail(null); void run(`cancel-${id}`, async () => { await api.cancelPledge(childId, id); return "Reward cancelled"; }); }} onCheer={(id) => void run(`cheer-${id}`, async () => { await api.cheer(childId, id); return `${name} got your heart`; })} /> : null}
       {sheet === "send" && view ? <SendSheet name={name} how={how} onClose={() => { setSheet(null); }} onSend={(amount, note) => { setSheet(null); void run("send", async () => { const r = await api.topUp(childId, amount, note || `From ${guardianLabel}`); afterSend(r.payment); }); }} /> : null}
       {sheet === "pocket" && view ? <PocketSheet view={view} onClose={() => { setSheet(null); }} onSave={(amount, d) => { setSheet(null); void run("pocket", async () => { await api.setAllowance(childId, amount, d); return `${aed(amount)} every ${DAYS[d] ?? "week"}`; }); }} onStop={() => { setSheet(null); void run("pocket", async () => { await api.clearAllowance(childId); return "Pocket money stopped"; }); }} /> : null}
       {sheet === "reward" && view ? <RewardPicker api={api} childId={childId} name={name} view={view} guardianLabel={guardianLabel} autoLimit={active ? active.limits.maxPerPayment : null} onClose={() => { setSheet(null); }} onSaved={(msg) => { setSheet(null); setTab("rewards"); say(msg); void load(); }} /> : null}
@@ -261,18 +261,19 @@ function Today({ view, name, colour, total, how, pending, busy, run, afterSend, 
 
       {due.map((p) => {
         const c = capOf(p); const tot = c.progress?.total ?? 0;
-        const colour = panelFor(p.capability);
+        const panel = panelFor(p.capability);
         return (
           <article key={p.id} className="pa-post">
             <Seen name={name} child when={p.dueAt ? day(p.dueAt) : "just now"} />
             <div className="pa-say"><span className="pa-av sm" style={{ background: colour }}>{name.slice(0, 1).toUpperCase()}</span>{name} <em>finished</em> {p.gateName} <em>· you promised</em> {p.reward?.kind === "promise" ? `“${p.reward.title}”` : <Amt n={p.amount} />}</div>
-            <Panel colour={colour} art={ART.trophy} title={p.gateName} line={tot ? `${tot} of ${tot} lessons` : "Finished"} done={tot} total={tot} />
+            <Panel colour={panel} art={ART.trophy} title={p.gateName} line={tot ? `${tot} of ${tot} lessons` : "Finished"} done={tot} total={tot} />
             <div className="pa-acts"><button type="button" className="pa-btn" disabled={busy === p.id} onClick={() => void run(p.id, async () => {
               const r = await api.releasePledge(childId, p.id);
               if (r.pledge.reward?.kind === "promise") return `Kept: ${r.pledge.reward.title}`;
               const pays = (await api.payments(childId)).payments;
               afterSend(pays.find((x) => x.id === r.pledge.paymentId));
-            })}>{p.reward?.kind === "promise" ? "Kept it" : how === "manual" ? <>I'll send <Amt n={p.amount} /></> : <>Send <Amt n={p.amount} /></>}</button></div>
+            })}>{p.reward?.kind === "promise" ? "Kept it" : how === "manual" ? <>I'll send <Amt n={p.amount} /></> : <>Send <Amt n={p.amount} /></>}</button>
+              <CheerButton p={p} name={name} busy={busy} onCheer={() => void run(`cheer-${p.id}`, async () => { await api.cheer(childId, p.id); return `${name} got your heart`; })} /></div>
           </article>
         );
       })}
@@ -496,8 +497,19 @@ function Rewards({ view, name, onNew, onOpen }: { view: CapabilitiesView; name: 
   );
 }
 
+/** Cheer: a heart for something the child finished, no money involved. Each grown-up sends one. */
+function CheerButton({ p, name, busy, onCheer }: { p: Pledge; name: string; busy: string | null; onCheer: () => void }) {
+  const done = !!p.cheeredByMe;
+  return (
+    <button type="button" className="pa-cheer" aria-pressed={done} disabled={done || busy === `cheer-${p.id}`} onClick={onCheer} aria-label={done ? `You sent ${name} a heart` : `Send ${name} a heart`}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>
+      {done ? "Cheered" : "Cheer"}
+    </button>
+  );
+}
+
 /** One reward, as the child sees it, with the parent's way out while it's still open. */
-function RewardDetail({ view, name, id, guardianLabel, busy, onClose, onCancel }: { view: CapabilitiesView; name: string; id: string; guardianLabel: string; busy: string | null; onClose: () => void; onCancel: (id: string) => void }) {
+function RewardDetail({ view, name, id, guardianLabel, busy, onClose, onCancel, onCheer }: { view: CapabilitiesView; name: string; id: string; guardianLabel: string; busy: string | null; onClose: () => void; onCancel: (id: string) => void; onCheer: (id: string) => void }) {
   const p = (view.pledges ?? []).find((x) => x.id === id);
   if (!p) return null;
   const c = progressed(view, p);
@@ -514,6 +526,9 @@ function RewardDetail({ view, name, id, guardianLabel, busy, onClose, onCancel }
         {tot ? <div className="pa-dots">{Array.from({ length: Math.min(tot, 12) }, (_, i) => <i key={i} className={i < Math.round((done / tot) * Math.min(tot, 12)) ? "on" : ""} />)}</div> : null}
       </div>
       <div className="pa-muted c">{rewardLine(p)}.</div>
+      {p.status === "due" || p.status === "paid" ? (
+        <div className="pa-row" style={{ justifyContent: "center", marginTop: 14 }}><CheerButton p={p} name={name} busy={busy} onCheer={() => { onCheer(p.id); }} /></div>
+      ) : null}
       {p.status === "open" ? <button type="button" className="pa-btn danger block" style={{ marginTop: 16 }} disabled={busy === `cancel-${p.id}`} onClick={() => { onCancel(p.id); }}>Cancel this reward</button> : null}
       <button type="button" className="pa-btn ghost block" style={{ marginTop: 8 }} onClick={onClose}>Done</button>
     </Sheet>

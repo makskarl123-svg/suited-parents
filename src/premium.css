@@ -96,6 +96,12 @@
 .pa-why { font-size: 14px; color: var(--ink-2); margin-top: 6px; line-height: 1.45; }
 .pa-acts { display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .pa-acts .pa-btn.grow { flex: 1; }
+/* Cheer: a heart for finishing. Outline until sent, then a solid red heart. */
+.pa-cheer { display: inline-flex; align-items: center; gap: 6px; height: 48px; padding: 0 16px 0 13px; border-radius: 99px; background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--line); font-weight: 700; font-size: 15px; color: var(--ink); transition: transform 80ms; }
+.pa-cheer:active:not(:disabled) { transform: scale(.96); }
+.pa-cheer[aria-pressed="true"] { color: #A11B1B; box-shadow: inset 0 0 0 1.5px #F3C7C7; }
+.pa-cheer[aria-pressed="true"] svg path { fill: var(--cardinal); stroke: var(--cardinal); }
+.pa .pa-cheer:disabled { opacity: 1; }
 .pa-panel { margin-top: 12px; border-radius: 20px; height: 160px; position: relative; overflow: hidden; }
 .pa-tile { position: absolute; border-radius: 18px; box-shadow: 0 10px 20px -12px rgba(0, 0, 0, .35); }
 .pa-tile.art { width: 108px; height: 108px; display: grid; place-items: center; left: max(24px, calc(50% - 140px)); top: 28px; transform: rotate(-9deg); }
