@@ -190,9 +190,11 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
 
 /** The child's account is the first step whenever the payments side can take one and none is added yet. */
 const needsAccount = (v: CapabilitiesView): boolean => !!v.setup?.acceptsAccounts && !v.payee;
+/** A finished reward still waiting for this parent. A cheer-only reward is done once any heart is sent (it turns paid). */
+const needsYou = (p: Pledge): boolean => p.status === "due" && !(p.reward?.kind === "cheer" && p.cheeredByMe);
 
 function decisionsCount(v: CapabilitiesView, how: How, pending: Mandate | undefined, stopped = false): number {
-  return (needsAccount(v) ? 1 : 0) + (stopped ? 1 : 0) + (v.pledges ?? []).filter((p) => p.status === "due").length + (v.requests ?? []).filter((r) => r.status === "pending").length + (how === "manual" ? (v.payments ?? []).filter((p) => p.status === "due").length : 0) + (pending ? 1 : 0);
+  return (needsAccount(v) ? 1 : 0) + (stopped ? 1 : 0) + (v.pledges ?? []).filter(needsYou).length + (v.requests ?? []).filter((r) => r.status === "pending").length + (how === "manual" ? (v.payments ?? []).filter((p) => p.status === "due").length : 0) + (pending ? 1 : 0);
 }
 
 /* ───────────── Today ───────────── */
@@ -218,7 +220,7 @@ function Panel({ colour, art, title, line, done, total, height }: { colour: stri
 function Today({ view, name, colour, total, how, pending, busy, run, afterSend, say, api, childId, onSetup, stopped, onReapprove, onAllPayments, family, onWriteRules }: { view: CapabilitiesView; name: string; colour: string; total: number; how: How; pending: Mandate | undefined; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; afterSend: (p: Payment | undefined) => void; say: (m: string, undo?: () => void) => void; api: MoneyApi; childId: string; onSetup: () => void; stopped: boolean; onReapprove: () => void; onAllPayments: () => void; family: FamilyAgreement | null | undefined; onWriteRules: () => void }) {
   // Reading the child's own account (the one money is sent to): money landing is spotted, nobody needs to confirm.
   const reading = view.bank?.status === "active" && !!view.bank.balance && view.bank.matchesAccount !== false;
-  const due = (view.pledges ?? []).filter((p) => p.status === "due");
+  const due = (view.pledges ?? []).filter(needsYou);
   const asks = (view.requests ?? []).filter((r) => r.status === "pending");
   const toSend = how === "manual" ? (view.payments ?? []).filter((p) => p.status === "due") : [];
   const waiting = (view.payments ?? []).filter((p) => p.status === "sent" && p.parentSaidSentAt);
@@ -510,7 +512,7 @@ function Prize({ p }: { p: Pledge }) {
 
 /** "Sent automatically when finished", or what happens next for this reward. */
 function rewardLine(p: Pledge): string {
-  if (p.reward?.kind === "cheer") return p.status === "paid" ? "You cheered" : p.status === "due" ? "Finished. Send your heart from Today" : "You send a heart when finished";
+  if (p.reward?.kind === "cheer") return p.cheeredByMe ? "You cheered" : p.status === "paid" ? "Cheered. You can add your heart too" : p.status === "due" ? "Finished. Send your heart from Today" : "You send a heart when finished";
   return p.status === "paid" ? (p.reward?.kind === "promise" ? "Kept" : "Sent") : p.status === "due" ? "Finished. It's on Today for you" : p.reward?.kind === "promise" ? "You tap Kept it when you've done it" : p.autoRelease ? "Sent automatically when finished" : "You send it with one tap when finished";
 }
 
@@ -547,9 +549,9 @@ function Rewards({ view, name, onNew, onOpen }: { view: CapabilitiesView; name: 
   );
 }
 
-/** Cheer: a heart for something the child finished, no money involved. Each grown-up sends one. A cheer-only reward's own button is already the heart. */
+/** Cheer: a heart for something the child finished, no money involved. Each grown-up sends one. While a cheer-only reward is due, its own button is the heart. */
 function CheerButton({ p, name, busy, onCheer }: { p: Pledge; name: string; busy: string | null; onCheer: () => void }) {
-  if (p.reward?.kind === "cheer") return null;
+  if (p.reward?.kind === "cheer" && p.status === "due") return null;
   const done = !!p.cheeredByMe;
   return (
     <button type="button" className="pa-cheer" aria-pressed={done} disabled={done || busy === `cheer-${p.id}`} onClick={onCheer} aria-label={done ? `You sent ${name} a heart` : `Send ${name} a heart`}>
@@ -577,7 +579,7 @@ function RewardDetail({ view, name, id, guardianLabel, busy, onClose, onCancel, 
         {tot ? <div className="pa-dots">{Array.from({ length: Math.min(tot, 12) }, (_, i) => <i key={i} className={i < Math.round((done / tot) * Math.min(tot, 12)) ? "on" : ""} />)}</div> : null}
       </div>
       <div className="pa-muted c">{rewardLine(p)}.</div>
-      {(p.status === "due" || p.status === "paid") && p.reward?.kind !== "cheer" ? (
+      {p.status === "paid" || (p.status === "due" && p.reward?.kind !== "cheer") ? (
         <div className="pa-row" style={{ justifyContent: "center", marginTop: 14 }}><CheerButton p={p} name={name} busy={busy} onCheer={() => { onCheer(p.id); }} /></div>
       ) : null}
       {p.status === "open" ? <button type="button" className="pa-btn danger block" style={{ marginTop: 16 }} disabled={busy === `cancel-${p.id}`} onClick={() => { onCancel(p.id); }}>Cancel this reward</button> : null}
