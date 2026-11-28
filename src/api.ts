@@ -101,7 +101,14 @@ export interface PayeeCheck { result: "match" | "probable" | "review" | "no_matc
 /** A standing permission at the parent's bank for Suited to send money to their children's accounts within limits. */
 export interface Mandate { id: string; guardianId: string; childIds: string[]; provider: string; authorisationUrl: string; status: "pending" | "active" | "paused" | "ended" | "failed"; limits: { currency: string; maxPerPayment: number; maxPerWeek: number; startDate: string; endDate: string }; createdAt: string; updatedAt: string }
 
-export interface CapabilitiesView { childId: string; gateSet: string; capabilities: CapabilityView[]; account?: AccountView | null; requests?: TopUpRequest[]; allowance?: Allowance | null; pledges?: Pledge[]; card?: { frozen: boolean } | null; consent?: { givenAt: string; byGuardianId: string; withdrawnAt: string | null } | null; jars?: Jar[]; fund?: FundView | null; payments?: Payment[]; payee?: Payee | null; bank?: BankView | null; setup?: PaymentSetup }
+/**
+ * The child's grade on the Money side. setBy: who changed it last (a parent here, or the learning API for a school or
+ * onboarding). confirmedByParentAt: null until a parent has said the grade is right; the app asks once. Absent from older services.
+ */
+export interface GradeView { current: number; setBy: "parent" | "api"; changedAt: string | null; confirmedByParentAt: string | null }
+export interface GradeChange { childId: string; grade: number; gradeSet: string; changed: boolean; gradeInfo: GradeView }
+
+export interface CapabilitiesView { childId: string; gateSet: string; grade?: GradeView; capabilities: CapabilityView[]; account?: AccountView | null; requests?: TopUpRequest[]; allowance?: Allowance | null; pledges?: Pledge[]; card?: { frozen: boolean } | null; consent?: { givenAt: string; byGuardianId: string; withdrawnAt: string | null } | null; jars?: Jar[]; fund?: FundView | null; payments?: Payment[]; payee?: Payee | null; bank?: BankView | null; setup?: PaymentSetup }
 
 /** The child's real balance, read from their bank with the account holder's read-only permission. */
 /** matchesAccount false: the account shared at the bank is not the child's account that money is sent to. */
@@ -114,7 +121,7 @@ export interface Snapshot { capability: string; state: CapabilityState; label: s
 export interface AuditEntry { at: string; childId: string; capability?: string; what: string; requestId?: string; actor?: string }
 
 export type Verb = "approve" | "not-yet" | "open-early" | "close" | "reopen";
-export interface ChildSummary { childId: string; displayName: string; gateSet: string }
+export interface ChildSummary { childId: string; displayName: string; gateSet: string; grade?: GradeView }
 
 /** A connection a parent started from the code on a child's screen. */
 export interface PairingSummary { id: string; status: "waiting" | "claimed" | "connected" | "declined" | "cancelled" | "expired"; displayName: string; grade: number; expiresAt: string; decidedAt?: string }
@@ -247,6 +254,11 @@ export class MoneyApi {
   /** Every subject and thread of the child's grade with progress, and the thread to suggest first. */
   goals(childId: string): Promise<Goals> {
     return this.call(`/children/${encodeURIComponent(childId)}/goals`);
+  }
+
+  /** Change the child's grade, or post the current one to confirm it. 409 when that grade's rewards aren't ready yet. */
+  setGrade(childId: string, grade: number): Promise<GradeChange> {
+    return this.call(`/children/${encodeURIComponent(childId)}/grade`, { method: "POST", body: JSON.stringify({ grade }) });
   }
 
   /** A reward for finishing a thread or a whole subject. */

@@ -544,7 +544,7 @@ function Limits({ view, childName }: { view: CapabilitiesView; childName: string
       {next && !isOn(ceiling) && p && p.total > 0 ? (
         <>
           <div style={{ marginTop: 10, display: "flex", gap: 5 }} aria-label={`${p.done} of ${p.total} strands done`}>{Array.from({ length: p.total }, (_, i) => <span key={i} style={{ height: 8, flex: 1, borderRadius: 99, background: i < p.done ? "var(--owl)" : "var(--polar)" }} />)}</div>
-          <div className="small" style={{ marginTop: 8 }}>{togo === 0 ? "Earned. Waiting for your yes." : `${p.done} of ${p.total} Grade 6 strands done · ${togo === 1 ? "1 strand" : `${togo} strands`} to go. You say yes, the bank lifts it.`}</div>
+          <div className="small" style={{ marginTop: 8 }}>{togo === 0 ? "Earned. Waiting for your yes." : `${p.done} of ${p.total} Grade ${view.grade?.current ?? (/(\d{1,2})/.exec(view.gateSet)?.[1] ?? "")} strands done · ${togo === 1 ? "1 strand" : `${togo} strands`} to go. You say yes, the bank lifts it.`}</div>
         </>
       ) : null}
     </div>
@@ -740,7 +740,7 @@ export function ChildPage({ api, childId, childName, onSectionSeen }: { api: Mon
   const dueCount = (view?.payments ?? []).filter((p) => p.status === "due").length + (view?.pledges ?? []).filter((p) => p.status === "due").length;
   const hasCard = view?.card != null;
   const automatic = mandates.some((m) => m.childIds.includes(childId) && m.status === "active");
-  const grade = view ? (/(\d{1,2})/.exec(view.gateSet)?.[1] ?? "") : "";
+  const grade = view ? (view.grade ? String(view.grade.current) : (/(\d{1,2})/.exec(view.gateSet)?.[1] ?? "")) : "";
 
   return (
     <div className="shell">

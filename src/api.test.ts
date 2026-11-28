@@ -29,4 +29,19 @@ describe("MoneyApi", () => {
     expect(JSON.parse(init.body as string)).toEqual({ limit: { currency: "AED", perWeek: 80 } });
     await expect(api.act("maya", "cash_out", "approve")).rejects.toMatchObject({ status: 409, message: "cannot apply Approve in state Active" } satisfies Partial<ApiError>);
   });
+
+  it("posts a grade, and a grade without rewards yet comes back as a 409", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ childId: "maya", grade: 5, gradeSet: "G5-2026-27", changed: true, gradeInfo: { current: 5, setBy: "parent", changedAt: "2026-11-29T10:00:00.000Z", confirmedByParentAt: "2026-11-29T10:00:00.000Z" } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "grade data missing", grade: 3 }), { status: 409 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = new MoneyApi("/api", identity);
+    const r = await api.setGrade("maya", 5);
+    expect(r).toMatchObject({ grade: 5, changed: true, gradeInfo: { setBy: "parent" } });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/children/maya/grade");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ grade: 5 });
+    await expect(api.setGrade("maya", 3)).rejects.toMatchObject({ status: 409 } satisfies Partial<ApiError>);
+  });
 });

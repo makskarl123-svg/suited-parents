@@ -136,6 +136,20 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
     say(`${aed(p.amount)} on its way to ${name}`);
   };
 
+  /** Change or confirm the grade. A grade whose rewards aren't ready yet changes nothing, and says so kindly. */
+  const setGrade = (grade: number): void => {
+    const from = view?.grade?.current;
+    void run("grade", async () => {
+      try {
+        const r = await api.setGrade(childId, grade);
+        return r.changed ? `${name} is in Grade ${grade} now. Rewards you set before keep counting` : `Thanks. Grade ${grade} it is`;
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409) return `Rewards for Grade ${grade} are on the way. ${name} stays in Grade ${from ?? grade} for now`;
+        throw e;
+      }
+    });
+  };
+
   if (!child) return null;
   const total = view ? (view.account?.balance ?? 0) + (view.jars ?? []).reduce((s, j) => s + j.balance, 0) : 0;
 
@@ -158,10 +172,10 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
           </div>
           {error ? <div className="pa-err">{error}</div> : null}
           {!view && !error ? <div className="pa-card pa-muted">Loading…</div> : null}
-          {view && tab === "today" ? <Today view={view} name={name} colour={colour} total={total} how={how} pending={pending} busy={busy} run={run} afterSend={afterSend} say={say} api={api} childId={childId} onSetup={() => { setTab("settings"); window.scrollTo({ top: 0 }); }} stopped={stopped} onReapprove={() => { setSheet("permission"); }} onAllPayments={() => { setTab("money"); window.scrollTo({ top: 0 }); }} family={family} onWriteRules={writeRules} /> : null}
+          {view && tab === "today" ? <Today view={view} name={name} colour={colour} total={total} how={how} pending={pending} busy={busy} run={run} afterSend={afterSend} say={say} api={api} childId={childId} onSetup={() => { setTab("settings"); window.scrollTo({ top: 0 }); }} stopped={stopped} onReapprove={() => { setSheet("permission"); }} onAllPayments={() => { setTab("money"); window.scrollTo({ top: 0 }); }} family={family} onWriteRules={writeRules} onGrade={setGrade} /> : null}
           {view && tab === "money" ? <Money view={view} name={name} colour={colour} total={total} how={how} paused={!!paused} flying={flying} onSend={() => { setSheet("send"); }} onPocket={() => { setSheet("pocket"); }} /> : null}
           {view && tab === "rewards" ? <Rewards view={view} name={name} onNew={() => { setSheet("reward"); }} onOpen={setDetail} /> : null}
-          {view && tab === "settings" ? <Settings view={view} name={name} api={api} childId={childId} mine={mine} busy={busy} run={run} onPermission={() => { setSheet("permission"); }} guardianLabel={guardianLabel} onSwitchGuardian={onSwitchGuardian} onConnectChild={onConnectChild} family={family} me={me} onWriteRules={writeRules} onAgree={(fam) => void run("agree", async () => { setFamily((await api.agreeToAgreement(fam.familyId, fam.version)).family); return "You agreed to your family's rules"; })} /> : null}
+          {view && tab === "settings" ? <Settings view={view} name={name} api={api} childId={childId} mine={mine} busy={busy} run={run} onPermission={() => { setSheet("permission"); }} guardianLabel={guardianLabel} onSwitchGuardian={onSwitchGuardian} onConnectChild={onConnectChild} family={family} me={me} onWriteRules={writeRules} onAgree={(fam) => void run("agree", async () => { setFamily((await api.agreeToAgreement(fam.familyId, fam.version)).family); return "You agreed to your family's rules"; })} onGrade={setGrade} /> : null}
         </main>
         <nav className="pa-tabs" aria-label="Sections">
           {(["today", "money", "give", "rewards", "settings"] as const).map((t) => t === "give" ? (
@@ -190,9 +204,58 @@ export function Family({ api, kids, guardianLabel, onSwitchGuardian, onConnectCh
 
 /** The child's account is the first step whenever the payments side can take one and none is added yet. */
 const needsAccount = (v: CapabilitiesView): boolean => !!v.setup?.acceptsAccounts && !v.payee;
+/** Asked once: until a parent has said the grade is right (or changed it). A Money service too old to say asks nothing. */
+const needsGradeCheck = (v: CapabilitiesView): boolean => !!v.grade && !v.grade.confirmedByParentAt;
+const GRADES = [1, 2, 3, 4, 5, 6, 7];
+
+/**
+ * The child's grade, with a calm way to change it. On Today it asks once ("Check Omar's grade"); in Settings it
+ * always shows. A change is confirmed before it is sent; rewards already set keep their own grade and keep counting.
+ */
+function GradeEditor({ name, grade, busy, onSet, check }: { name: string; grade: number; busy: boolean; onSet: (g: number) => void; check: boolean }) {
+  const [picking, setPicking] = useState(false);
+  const [to, setTo] = useState<number | null>(null);
+  const close = (): void => { setPicking(false); setTo(null); };
+  const picker = (
+    <>
+      <div className="pa-why" style={{ marginTop: 10 }}>Which grade is {name} in?</div>
+      <div className="pa-amounts" role="group" aria-label="Grade" style={{ display: "grid", gridTemplateColumns: `repeat(${GRADES.length}, minmax(0, 1fr))` }}>{GRADES.map((g) => <button key={g} type="button" className="pa-amt" aria-pressed={to === g} aria-label={`Grade ${g}`} style={{ minWidth: 0, padding: 0 }} onClick={() => { setTo(g); }}>{g}</button>)}</div>
+      {to !== null && to !== grade ? <div className="pa-why">Move {name} to Grade {to}? Rewards you've already set keep counting.</div> : null}
+      <div className="pa-acts">
+        <button type="button" className="pa-btn small" disabled={busy || to === null} onClick={() => { if (to !== null) { onSet(to); close(); } }}>{to === null || to === grade ? `Keep Grade ${grade}` : `Move to Grade ${to}`}</button>
+        <button type="button" className="pa-btn ghost small" onClick={close}>Cancel</button>
+      </div>
+    </>
+  );
+  if (check) {
+    return (
+      <article className="pa-post">
+        <Seen name={name} child={false} when="Just once" />
+        <div className="pa-say">Check {name}'s <em>grade</em></div>
+        {!picking ? (
+          <>
+            <div className="pa-why">{name} is in Grade {grade}. Rewards follow {name}'s grade, so it's worth a quick look.</div>
+            <div className="pa-acts">
+              <button type="button" className="pa-btn" disabled={busy} onClick={() => { onSet(grade); }}>Yes, Grade {grade} is right</button>
+              <button type="button" className="pa-btn ghost" onClick={() => { setPicking(true); }}>Change it</button>
+            </div>
+          </>
+        ) : picker}
+      </article>
+    );
+  }
+  return (
+    <div className="pa-card">
+      <span className="pa-eyebrow">{name}'s grade</span>
+      {!picking ? (
+        <div className="pa-row" style={{ marginTop: 6 }}><div className="pa-grow pa-muted">{name} is in Grade {grade}. Not right?</div><button type="button" className="pa-btn ghost small" onClick={() => { setPicking(true); }}>Change it</button></div>
+      ) : picker}
+    </div>
+  );
+}
 
 function decisionsCount(v: CapabilitiesView, how: How, pending: Mandate | undefined, stopped = false): number {
-  return (needsAccount(v) ? 1 : 0) + (stopped ? 1 : 0) + (v.pledges ?? []).filter((p) => p.status === "due").length + (v.requests ?? []).filter((r) => r.status === "pending").length + (how === "manual" ? (v.payments ?? []).filter((p) => p.status === "due").length : 0) + (pending ? 1 : 0);
+  return (needsAccount(v) ? 1 : 0) + (needsGradeCheck(v) ? 1 : 0) + (stopped ? 1 : 0) + (v.pledges ?? []).filter((p) => p.status === "due").length + (v.requests ?? []).filter((r) => r.status === "pending").length + (how === "manual" ? (v.payments ?? []).filter((p) => p.status === "due").length : 0) + (pending ? 1 : 0);
 }
 
 /* ───────────── Today ───────────── */
@@ -215,7 +278,7 @@ function Panel({ colour, art, title, line, done, total, height }: { colour: stri
   );
 }
 
-function Today({ view, name, colour, total, how, pending, busy, run, afterSend, say, api, childId, onSetup, stopped, onReapprove, onAllPayments, family, onWriteRules }: { view: CapabilitiesView; name: string; colour: string; total: number; how: How; pending: Mandate | undefined; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; afterSend: (p: Payment | undefined) => void; say: (m: string, undo?: () => void) => void; api: MoneyApi; childId: string; onSetup: () => void; stopped: boolean; onReapprove: () => void; onAllPayments: () => void; family: FamilyAgreement | null | undefined; onWriteRules: () => void }) {
+function Today({ view, name, colour, total, how, pending, busy, run, afterSend, say, api, childId, onSetup, stopped, onReapprove, onAllPayments, family, onWriteRules, onGrade }: { view: CapabilitiesView; name: string; colour: string; total: number; how: How; pending: Mandate | undefined; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; afterSend: (p: Payment | undefined) => void; say: (m: string, undo?: () => void) => void; api: MoneyApi; childId: string; onSetup: () => void; stopped: boolean; onReapprove: () => void; onAllPayments: () => void; family: FamilyAgreement | null | undefined; onWriteRules: () => void; onGrade: (grade: number) => void }) {
   // Reading the child's own account (the one money is sent to): money landing is spotted, nobody needs to confirm.
   const reading = view.bank?.status === "active" && !!view.bank.balance && view.bank.matchesAccount !== false;
   const due = (view.pledges ?? []).filter((p) => p.status === "due");
@@ -229,7 +292,8 @@ function Today({ view, name, colour, total, how, pending, busy, run, afterSend, 
   const lessons = view.capabilities.reduce((s, c) => s + (c.progress?.done ?? 0), 0);
   const open = (view.pledges ?? []).filter((p) => p.status === "open");
   const setupStep = needsAccount(view);
-  const count = (setupStep ? 1 : 0) + (stopped ? 1 : 0) + due.length + asks.length + toSend.length + (pending ? 1 : 0);
+  const gradeCheck = needsGradeCheck(view);
+  const count = (setupStep ? 1 : 0) + (gradeCheck ? 1 : 0) + (stopped ? 1 : 0) + due.length + asks.length + toSend.length + (pending ? 1 : 0);
   const capOf = (p: Pledge): Progressed => progressed(view, p);
 
   return (
@@ -274,6 +338,8 @@ function Today({ view, name, colour, total, how, pending, busy, run, afterSend, 
           <div className="pa-acts"><button type="button" className="pa-btn" onClick={onSetup}>Add {name}'s account</button></div>
         </article>
       ) : null}
+
+      {gradeCheck && view.grade ? <GradeEditor name={name} grade={view.grade.current} busy={busy === "grade"} onSet={onGrade} check /> : null}
 
       {pending ? (
         <article className="pa-post">
@@ -535,7 +601,7 @@ function Rewards({ view, name, onNew, onOpen }: { view: CapabilitiesView; name: 
         return (
           <button key={p.id} type="button" className="pa-reward" onClick={() => { onOpen(p.id); }}>
             <div className="sw" style={{ background: panelFor(p.capability) }}><img src={artFor(p)} alt="" /><span>{p.status === "open" ? `${done}/${tot || "?"}` : "✓"}</span></div>
-            <div className="pa-grow"><div className="pa-say">{p.gateName}</div><Prize p={p} /><small>{rewardLine(p)}</small></div>
+            <div className="pa-grow"><div className="pa-say">{p.gateName}</div><Prize p={p} /><small>{rewardLine(p)}{p.goal && view.grade && p.goal.grade !== view.grade.current ? ` · Grade ${p.goal.grade}` : ""}</small></div>
             <svg className="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m9 6 6 6-6 6" /></svg>
           </button>
         );
@@ -654,7 +720,7 @@ function BankBalance({ view, name, api, childId, busy, run }: { view: Capabiliti
   );
 }
 
-function Settings({ view, name, api, childId, mine, busy, run, onPermission, guardianLabel, onSwitchGuardian, onConnectChild, family, me, onWriteRules, onAgree }: { view: CapabilitiesView; name: string; api: MoneyApi; childId: string; mine: Mandate[]; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; onPermission: () => void; guardianLabel: string; onSwitchGuardian?: () => void; onConnectChild?: () => void; family: FamilyAgreement | null | undefined; me: string | null; onWriteRules: () => void; onAgree: (f: FamilyAgreement) => void }) {
+function Settings({ view, name, api, childId, mine, busy, run, onPermission, guardianLabel, onSwitchGuardian, onConnectChild, family, me, onWriteRules, onAgree, onGrade }: { view: CapabilitiesView; name: string; api: MoneyApi; childId: string; mine: Mandate[]; busy: string | null; run: (k: string, fn: () => Promise<unknown>) => Promise<void>; onPermission: () => void; guardianLabel: string; onSwitchGuardian?: () => void; onConnectChild?: () => void; family: FamilyAgreement | null | undefined; me: string | null; onWriteRules: () => void; onAgree: (f: FamilyAgreement) => void; onGrade: (grade: number) => void }) {
   const [holder, setHolder] = useState(name);
   const [iban, setIban] = useState("");
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
@@ -674,6 +740,7 @@ function Settings({ view, name, api, childId, mine, busy, run, onPermission, gua
     <div className="pa-stack">
       <h1 className="pa-h1">Settings</h1>
       {family !== undefined ? <AgreementCard family={family} me={me} busy={busy === "agree" || busy === "rules"} onWrite={onWriteRules} onAgree={() => { if (family) onAgree(family); }} /> : null}
+      {view.grade ? <GradeEditor name={name} grade={view.grade.current} busy={busy === "grade"} onSet={onGrade} check={false} /> : null}
       <div className="pa-card">
         <span className="pa-eyebrow">{name}'s account</span>
         {view.payee && !changing ? (
